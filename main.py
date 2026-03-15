@@ -4,11 +4,45 @@ import uuid
 import os
 import re
 import base64
+import json
 from typing import List, Optional
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File, Form, Request, HTTPException, Depends, Query
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.security import OAuth2PasswordBearer
 import google.generativeai as genai
 import PIL.Image
+from datetime import datetime
+
+# Setup Config using JSON
+config_file = "config.json"
+example_file = "config_example.json"
+
+if not os.path.exists(example_file):
+    with open(example_file, "w", encoding="utf-8") as f:
+        json.dump({
+            "users": {
+                "admin": "admin_secure_pass_2026",
+                "nala": "nala_secure_pass_123"
+            }
+        }, f, indent=4)
+
+if not os.path.exists(config_file):
+    # Create default config.json if not present
+    with open(config_file, "w", encoding="utf-8") as f:
+        json.dump({
+            "users": {
+                "admin": "123456",
+                "nala": "123456"
+            }
+        }, f, indent=4)
+
+with open(config_file, "r", encoding="utf-8") as f:
+    config = json.load(f)
+
+USERS = config.get("users", {})
+
+SESSIONS = {}
 
 # Init SDK
 genai.configure(
@@ -21,24 +55,32 @@ image_model = genai.GenerativeModel('gemini-3.1-flash-image')
 
 app = FastAPI()
 
-os.makedirs("outputs", exist_ok=True)
+os.makedirs("users", exist_ok=True)
 os.makedirs("static", exist_ok=True)
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/login", auto_error=False)
+
+def get_current_user(token: str = Depends(oauth2_scheme), query_token: str = Query(None, alias="token")):
+    actual_token = token or query_token
+    if not actual_token or actual_token not in SESSIONS:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    return SESSIONS[actual_token]
 
 class JobQueue:
     def __init__(self):
         self.jobs = {}
         self.queue = asyncio.Queue()
 
-    async def add_job(self, mode, prompts, source_image_paths=None, system_prompt=""):
+    async def add_job(self, user, mode, prompts, source_image_paths=None, template_name="", template_content=""):
         job_id = str(uuid.uuid4())
         
-        # Calculate total tasks (Cartesian product: images x prompts)
         total_tasks = len(prompts)
         if mode == 'i2i' and source_image_paths:
             total_tasks = len(prompts) * max(1, len(source_image_paths))
             
         self.jobs[job_id] = {
             "id": job_id,
+            "user": user,
             "mode": mode,
             "status": "queued",
             "total": total_tasks,
@@ -48,23 +90,24 @@ class JobQueue:
             "created_at": time.time(),
             "started_at": None,
             "eta": None,
-            "system_prompt": system_prompt
+            "template_name": template_name
         }
-        await self.queue.put((job_id, prompts, source_image_paths, system_prompt))
+        await self.queue.put((job_id, user, prompts, source_image_paths, template_name, template_content))
         return self.jobs[job_id]
 
 job_queue = JobQueue()
 
 async def process_queue():
     while True:
-        job_id, prompts, source_image_paths, system_prompt = await job_queue.queue.get()
+        job_id, user, prompts, source_image_paths, tpl_name, tpl_content = await job_queue.queue.get()
         job = job_queue.jobs[job_id]
         job["status"] = "processing"
         job["started_at"] = time.time()
         
         mode = job["mode"]
+        user_dir = f"users/{user}/outputs"
+        os.makedirs(user_dir, exist_ok=True)
         
-        # Flatten tasks list [ (prompt, image_path), ... ]
         tasks = []
         if mode == 'i2i' and source_image_paths:
             for img_path in source_image_paths:
@@ -81,11 +124,7 @@ async def process_queue():
             try:
                 contents = []
                 
-                # Insert System Prompt if provided
-                if system_prompt and system_prompt.strip():
-                    contents.append(f"System Instructions:\n{system_prompt.strip()}\n\n")
-                
-                # Handle Image-to-Image mode
+                # Content includes prompts directly since UI template syncs to textbox
                 if img_path and os.path.exists(img_path):
                     try:
                         img = PIL.Image.open(img_path)
@@ -94,17 +133,24 @@ async def process_queue():
                         contents.append(enhanced_prompt)
                     except Exception as e:
                         print(f"Error loading image {img_path}: {e}")
-                        contents.append(prompt) # fallback
+                        contents.append(prompt)
                 else:
                     contents.append(prompt)
                 
-                # Generate Content
                 response = await asyncio.to_thread(image_model.generate_content, contents)
                 
                 generated_images = []
                 final_text = ""
                 
-                # Case 1: 模型直接返回完整的图像数据结构（inline_data）
+                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                base_src = "t2i"
+                if img_path:
+                    original_name = os.path.basename(img_path).split('_', 1)[-1]
+                    base_src = os.path.splitext(original_name)[0]
+                    
+                dl_base_name = f"{base_src}_{tpl_name}_{ts}" if tpl_name else f"{base_src}_{ts}"
+                dl_base_name = re.sub(r'[\\/*?:"<>|]', "", dl_base_name)
+
                 if hasattr(response, 'candidates') and response.candidates:
                     for candidate in response.candidates:
                         if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
@@ -113,47 +159,51 @@ async def process_queue():
                                     data = base64.b64decode(part.inline_data.data) if isinstance(part.inline_data.data, str) else part.inline_data.data
                                     mime = part.inline_data.mime_type
                                     ext = mime.split('/')[-1] if mime else 'png'
+                                    if ext == 'jpeg': ext = 'jpg'
+                                    
                                     filename = f"gen_{uuid.uuid4().hex[:8]}.{ext}"
-                                    filepath = os.path.join("outputs", filename)
+                                    dl_full_name = f"{dl_base_name}.{ext}"
+                                    filepath = os.path.join(user_dir, filename)
                                     with open(filepath, "wb") as f:
                                         f.write(data)
-                                    generated_images.append(f"/outputs/{filename}")
-                                    
-                # Case 2: 代理返回了包含Base64数据的Markdown文本（或图片链接）
+                                    generated_images.append({
+                                        "url": f"/api/images/{user}/{filename}",
+                                        "download_name": dl_full_name
+                                    })
+
                 if not generated_images:
                     try:
                         text = response.text
                         if text:
-                            # 提取 Markdown 格式中的 base64 数据
                             base64_patterns = re.findall(r'!\[.*?\]\((data:image/([^;]+);base64,([^)]+))\)', text)
                             if base64_patterns:
+                                idx_img = 1
                                 for full_data_uri, ext, b64_data in base64_patterns:
+                                    if ext == 'jpeg': ext = 'jpg'
                                     filename = f"gen_{uuid.uuid4().hex[:8]}.{ext}"
-                                    filepath = os.path.join("outputs", filename)
+                                    suffix = f"_{idx_img}" if idx_img > 1 else ""
+                                    dl_full_name = f"{dl_base_name}{suffix}.{ext}"
+                                    idx_img += 1
+                                    
+                                    filepath = os.path.join(user_dir, filename)
                                     with open(filepath, "wb") as f:
                                         f.write(base64.b64decode(b64_data))
-                                    generated_images.append(f"/outputs/{filename}")
+                                    generated_images.append({
+                                        "url": f"/api/images/{user}/{filename}",
+                                        "download_name": dl_full_name
+                                    })
                                 
-                                # 移除原文本中超大的base64字符串，避免前端崩溃
                                 final_text = re.sub(r'!\[.*?\]\((data:image/[^;]+;base64,[^)]+)\)', '', text)
                             else:
                                 final_text = text
                     except Exception:
                         pass
                         
-                # 拼接生成的本地链接，提供给前端渲染
-                result_display = final_text.strip()
-                for img_url in generated_images:
-                    result_display += f"\n\n![Generated Image]({img_url})"
-                    
-                if not result_display.strip():
-                    result_display = "生成完毕，但未能提取到图片。"
-
                 job["results"].append({
                     "prompt": prompt, 
-                    # Tag result with image hash if multi-image to distinguish
-                    "source_img": os.path.basename(img_path) if img_path else None,
-                    "result": result_display, 
+                    "source_img": os.path.basename(img_path).split('_', 1)[-1] if img_path else None,
+                    "result": final_text.strip() if final_text else "",
+                    "images": generated_images,
                     "status": "success"
                 })
                 job["completed"] += 1
@@ -162,7 +212,7 @@ async def process_queue():
                 traceback.print_exc()
                 job["results"].append({
                     "prompt": prompt, 
-                    "source_img": os.path.basename(img_path) if img_path else None,
+                    "source_img": os.path.basename(img_path).split('_', 1)[-1] if img_path else None,
                     "error": str(e), 
                     "status": "error"
                 })
@@ -181,12 +231,51 @@ async def process_queue():
 async def startup_event():
     asyncio.create_task(process_queue())
 
+@app.post("/api/login")
+def login(username: str = Form(...), password: str = Form(...)):
+    if USERS.get(username) == password:
+        token = str(uuid.uuid4())
+        SESSIONS[token] = username
+        os.makedirs(f"users/{username}/outputs", exist_ok=True)
+        return {"access_token": token, "username": username}
+    return JSONResponse(status_code=401, content={"error": "Invalid credentials"})
+
+@app.get("/api/me")
+def get_me(user: str = Depends(get_current_user)):
+    return {"username": user}
+
+@app.post("/api/logout")
+def logout(token: str = Depends(oauth2_scheme)):
+    if token in SESSIONS:
+        del SESSIONS[token]
+    return {"success": True}
+
+@app.get("/api/templates")
+def get_templates(user: str = Depends(get_current_user)):
+    path = f"users/{user}/templates.json"
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return []
+
+@app.post("/api/templates")
+async def save_templates(request: Request, user: str = Depends(get_current_user)):
+    try:
+        data = await request.json()
+        path = f"users/{user}/templates.json"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+        return {"success": True}
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+
 @app.post("/api/jobs")
 async def create_job(
     prompts: str = Form(...),
     mode: str = Form(...),
-    system_prompt: str = Form(""),
-    images: Optional[List[UploadFile]] = File(None)
+    template_name: str = Form(""),
+    images: Optional[List[UploadFile]] = File(None),
+    user: str = Depends(get_current_user)
 ):
     prompt_list = [p.strip() for p in prompts.split("\n") if p.strip()]
     if not prompt_list:
@@ -194,21 +283,30 @@ async def create_job(
         
     source_image_paths = []
     if mode == "i2i" and images:
+        user_dir = f"users/{user}/outputs"
+        os.makedirs(user_dir, exist_ok=True)
         for img in images:
             if img and getattr(img, "filename", None):
-                path = f"outputs/{uuid.uuid4().hex[:8]}_{img.filename}"
+                path = os.path.join(user_dir, f"{uuid.uuid4().hex[:8]}_{img.filename}")
                 with open(path, "wb") as f:
                     f.write(await img.read())
                 source_image_paths.append(path)
             
-    job = await job_queue.add_job(mode, prompt_list, source_image_paths, system_prompt)
+    job = await job_queue.add_job(user, mode, prompt_list, source_image_paths, template_name, "")
     return job
 
 @app.get("/api/jobs")
-def get_jobs():
-    jobs = sorted(list(job_queue.jobs.values()), key=lambda x: x['created_at'], reverse=True)
-    return jobs
+def get_jobs(user: str = Depends(get_current_user)):
+    user_jobs = [j for j in job_queue.jobs.values() if j.get("user") == user]
+    return sorted(user_jobs, key=lambda x: x['created_at'], reverse=True)
 
-# 允许外部访问 outputs 目录的本地文件
-app.mount("/outputs", StaticFiles(directory="outputs"), name="outputs")
+@app.get("/api/images/{username}/{filename}")
+async def serve_img(username: str, filename: str, user: str = Depends(get_current_user)):
+    if user != username and user != "admin":
+        return JSONResponse(status_code=403, content={"error": "Forbidden"})
+    path = os.path.join(f"users/{username}/outputs", filename)
+    if os.path.exists(path):
+        return FileResponse(path)
+    return JSONResponse(status_code=404, content={"error": "Not found"})
+
 app.mount("/", StaticFiles(directory="static", html=True), name="static")

@@ -1,1 +1,5 @@
-outputs
+__pycache__/
+*.pyc
+outputs/
+users/
+config.json
