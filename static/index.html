@@ -234,7 +234,12 @@
                                     </span>
                                     <span class="text-xs font-mono text-gray-400 bg-gray-100 px-2 py-0.5 rounded ml-2 hidden sm:inline-block">#{{ job.id.substring(0,8) }}</span>
                                 </div>
-                                <div class="text-sm text-gray-500 font-medium whitespace-nowrap"><i class="far fa-calendar-alt mr-1.5 opacity-70"></i>{{ formatDate(job.created_at) }}</div>
+                                <div class="flex items-center space-x-4">
+                                    <div class="text-sm text-gray-500 font-medium whitespace-nowrap"><i class="far fa-calendar-alt mr-1.5 opacity-70"></i>{{ formatDate(job.created_at) }}</div>
+                                    <button @click="deleteJob(job.id)" class="text-red-500 hover:text-red-700 bg-white p-1.5 rounded-lg hover:bg-red-50 border border-transparent hover:border-red-200 transition-colors shadow-sm" title="删除记录">
+                                        <i class="fas fa-trash-alt"></i>
+                                    </button>
+                                </div>
                             </div>
 
                             <div class="p-6">
@@ -285,6 +290,9 @@
                                                             <button @click.prevent="downloadImage(img.url, img.download_name)" class="w-10 h-10 rounded-full bg-indigo-600/80 hover:bg-indigo-600 text-white flex items-center justify-center transition-colors transform hover:scale-110 shadow-sm border border-indigo-400" title="直接下载">
                                                                 <i class="fas fa-download"></i>
                                                             </button>
+                                                            <a :href="img.url + '?token=' + getToken()" target="_blank" class="w-10 h-10 rounded-full bg-emerald-600/80 hover:bg-emerald-600 text-white flex items-center justify-center transition-colors transform hover:scale-110 shadow-sm border border-emerald-400" title="新标签页预览">
+                                                                <i class="fas fa-external-link-alt"></i>
+                                                            </a>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -617,6 +625,24 @@
                     }
                 };
 
+                const deleteJob = async (id) => {
+                    if (!confirm('确定要删除这条任务记录吗？')) return;
+
+                    try {
+                        const response = await authFetch('/api/jobs/' + id, {
+                            method: 'DELETE'
+                        });
+                        if (response.ok) {
+                            fetchJobs();
+                        } else {
+                            alert('删除失败，可能没有权限或者任务不存在。');
+                        }
+                    } catch (error) {
+                        console.error('Delete job error:', error);
+                        alert('删除请求发生错误！');
+                    }
+                };
+
                 // Utility / Actions
                 const formatDate = (timestamp) => {
                     if (!timestamp) return '';
@@ -689,6 +715,7 @@
                     getObjectURL,
                     submitJob,
                     fetchJobs,
+                    deleteJob,
                     handleTemplateSelect,
                     saveTemplate,
                     handleLogin,

@@ -307,6 +307,17 @@ def get_jobs(user: str = Depends(get_current_user)):
     user_jobs = [j for j in job_queue.jobs.values() if j.get("user") == user]
     return sorted(user_jobs, key=lambda x: x['created_at'], reverse=True)
 
+@app.delete("/api/jobs/{job_id}")
+def delete_job(job_id: str, user: str = Depends(get_current_user)):
+    job = job_queue.jobs.get(job_id)
+    if not job:
+        return JSONResponse(status_code=404, content={"error": "Not found"})
+    if job["user"] != user and user != "admin":
+        return JSONResponse(status_code=403, content={"error": "Forbidden"})
+
+    del job_queue.jobs[job_id]
+    return {"success": True}
+
 @app.get("/api/images/{username}/{filename}")
 async def serve_img(username: str, filename: str, user: str = Depends(get_current_user)):
     if user != username and user != "admin":
