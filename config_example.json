@@ -1,6 +1,12 @@
 {
     "users": {
-        "admin": "123456",
-        "test": "123456"
+        "admin": {
+            "password": "admin_secure_pass_2026",
+            "is_admin": true
+        },
+        "test": {
+            "password": "123456",
+            "is_admin": false
+        }
     }
 }
