@@ -20,6 +20,33 @@ import google.generativeai as genai
 import PIL.Image
 from datetime import datetime
 
+# ================= 图像比例计算辅助函数 =================
+
+def get_closest_aspect_ratio(width, height):
+    """根据宽高计算最接近的标准长宽比"""
+    ratio = width / height
+    ratios = {
+        "1:1": 1.0,
+        "4:3": 1.333,
+        "3:4": 0.75,
+        "16:9": 1.777,
+        "9:16": 0.5625
+    }
+    # 找到差值最小的比例
+    closest_key = min(ratios.keys(), key=lambda k: abs(ratios[k] - ratio))
+    return closest_key
+
+def get_qwen_size(aspect_ratio):
+    """将标准长宽比映射为通义千问支持的 size 分辨率"""
+    mapping = {
+        "1:1": "1024*1024",
+        "4:3": "1024*768",
+        "3:4": "768*1024",
+        "16:9": "1280*720",
+        "9:16": "720*1280"
+    }
+    return mapping.get(aspect_ratio, "1024*1024")
+
 # ================= 配置与初始化 =================
 
 # 1. 基础应用配置
@@ -65,7 +92,6 @@ image_model = genai.GenerativeModel(model_name)
 
 # 2.2 阿里云 DashScope (通义千问) 初始化
 dashscope.api_key = os.getenv("DASHSCOPE_API_KEY", "")
-# 明确指定北京地域节点（与官方文档一致）
 dashscope.base_http_api_url = 'https://dashscope.aliyuncs.com/api/v1'
 
 # 3. 注册可用模型引擎
@@ -154,9 +180,24 @@ async def process_queue():
                 
                 ts = datetime.now().strftime("%Y%m%d_%H%M%S")
                 base_src = "t2i"
-                if img_path:
+                
+                # 默认值
+                target_aspect_ratio = "1:1"
+                qwen_target_size = "1024*1024"
+
+                if img_path and os.path.exists(img_path):
                     original_name = os.path.basename(img_path).split('_', 1)[-1]
                     base_src = os.path.splitext(original_name)[0]
+                    
+                    # 动态读取源图片的真实宽高比例
+                    try:
+                        with PIL.Image.open(img_path) as src_img:
+                            w, h = src_img.size
+                            target_aspect_ratio = get_closest_aspect_ratio(w, h)
+                            qwen_target_size = get_qwen_size(target_aspect_ratio)
+                            print(f"[Size Detect] Input: {w}x{h} -> Ratio: {target_aspect_ratio} -> Qwen Size: {qwen_target_size}")
+                    except Exception as e:
+                        print(f"Error reading image dimensions: {e}")
                     
                 dl_base_name = f"{base_src}_{tpl_name}_{ts}" if tpl_name else f"{base_src}_{ts}"
                 dl_base_name = re.sub(r'[\\/*?:"<>|]', "", dl_base_name)
@@ -188,7 +229,7 @@ async def process_queue():
                         "model": "qwen-image-2.0-pro",
                         "messages": messages,
                         "n": 1,
-                        "size": "1024*1024",
+                        "size": qwen_target_size, # 动态传入分辨率
                         "prompt_extend": True,
                         "watermark": False
                     }
@@ -217,10 +258,13 @@ async def process_queue():
                         raise Exception(f"DashScope Error: {rsp.message} (Code: {rsp.code})")
 
                 else:
-                    # Gemini 引擎处理反向提示词和调用
+                    # Gemini 引擎处理
                     final_prompt_text = prompt
                     if negative_prompt:
-                        final_prompt_text = f"{prompt}\n\nNegative Constraints (DO NOT INCLUDE): {negative_prompt}"
+                        final_prompt_text += f"\n\nNegative Constraints (DO NOT INCLUDE): {negative_prompt}"
+
+                    # 动态注入画布比例要求
+                    final_prompt_text += f"\n\n[CRITICAL: Output image aspect ratio MUST rigidly be {target_aspect_ratio}. Do NOT force a square output if the requested ratio is different.]"
 
                     contents = []
                     if img_path and os.path.exists(img_path):

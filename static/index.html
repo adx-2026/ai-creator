@@ -189,7 +189,7 @@
                                     <label class="block text-sm font-semibold text-gray-700 mb-2">
                                         反向提示词 <span class="text-xs font-normal text-gray-400 ml-1">(Negative Prompt: 不希望出现的元素)</span>
                                     </label>
-                                    <textarea v-model="form.negative_prompt" rows="3" class="shadow-sm focus:ring-red-500 focus:border-red-500 block w-full sm:text-sm border-gray-300 rounded-xl p-4 bg-red-50/30 text-gray-800 transition-colors" placeholder="例如：白边, 阴影, 变形, 文字..."></textarea>
+                                    <textarea v-model="form.negative_prompt" rows="3" class="shadow-sm focus:ring-slate-500 focus:border-slate-500 block w-full sm:text-sm border-gray-300 rounded-xl p-4 bg-slate-50 text-gray-800 transition-colors" placeholder="例如：白边, 阴影, 变形, 裁剪, 局部特写..."></textarea>
                                 </div>
 
                                 <div class="flex items-center justify-between bg-gray-50 p-4 rounded-xl border border-gray-100">
@@ -280,8 +280,8 @@
                                         <div v-for="(res, idx) in job.results" :key="idx" class="bg-white rounded-2xl p-4 border border-gray-200 shadow-sm transition-all relative flex flex-col hover:border-indigo-300 hover:shadow-md">
                                             <div class="mb-3 border-b border-gray-50 pb-3">
                                                 <div class="text-sm font-bold text-gray-800 line-clamp-2 leading-relaxed tracking-wide">"{{ res.prompt }}"</div>
-                                                <div v-if="job.negative_prompt" class="mt-1.5 text-xs font-medium text-red-500 line-clamp-1 bg-red-50 inline-block px-2 py-0.5 rounded border border-red-100">
-                                                    <i class="fas fa-minus-circle mr-1"></i>{{ job.negative_prompt }}
+                                                <div v-if="job.negative_prompt" class="mt-2 text-xs font-medium text-slate-500 line-clamp-1 bg-slate-50/80 inline-block px-2 py-1 rounded-md border border-slate-200">
+                                                    <i class="fas fa-eye-slash mr-1 opacity-70"></i>排除: {{ job.negative_prompt }}
                                                 </div>
                                                 <div v-if="res.source_img" class="mt-2 text-xs text-gray-500 truncate bg-gray-50 px-2 py-1 rounded inline-block max-w-full">
                                                     <i class="fas fa-image mr-1.5 text-indigo-400"></i>源: {{ res.source_img }}
@@ -341,7 +341,7 @@
                     </div>
                     <div>
                         <label class="block text-sm font-semibold text-gray-700 mb-2">反向提示词 <span class="text-gray-400 font-normal">(可选)</span></label>
-                        <textarea v-model="newTemplate.negative_prompt" rows="2" class="w-full border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 p-3 bg-gray-50 text-sm" placeholder="例如：模糊, 变形..."></textarea>
+                        <textarea v-model="newTemplate.negative_prompt" rows="2" class="w-full border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 p-3 bg-gray-50 text-sm" placeholder="例如：白边, 阴影, 变形..."></textarea>
                     </div>
                 </div>
                 
