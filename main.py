@@ -20,19 +20,6 @@ import google.generativeai as genai
 import PIL.Image
 from datetime import datetime
 
-def get_closest_aspect_ratio(width, height):
-    ratio = width / height
-    ratios = {"1:1": 1.0, "4:3": 1.333, "3:4": 0.75, "16:9": 1.777, "9:16": 0.5625}
-    closest_key = min(ratios.keys(), key=lambda k: abs(ratios[k] - ratio))
-    return closest_key
-
-def get_qwen_size(aspect_ratio):
-    mapping = {
-        "1:1": "1024*1024", "4:3": "1024*768", "3:4": "768*1024",
-        "16:9": "1280*720", "9:16": "720*1280"
-    }
-    return mapping.get(aspect_ratio, "1024*1024")
-
 config_file = "config.json"
 example_file = "config_example.json"
 PUBLIC_TEMPLATES_FILE = "public_templates.json"
@@ -173,20 +160,10 @@ async def process_queue():
                 final_text = ""
                 ts = datetime.now().strftime("%Y%m%d_%H%M%S")
                 base_src = "t2i"
-                
-                target_aspect_ratio = "1:1"
-                qwen_target_size = "1024*1024"
 
                 if img_path and os.path.exists(img_path):
                     original_name = os.path.basename(img_path).split('_', 1)[-1]
                     base_src = os.path.splitext(original_name)[0]
-                    try:
-                        with PIL.Image.open(img_path) as src_img:
-                            w, h = src_img.size
-                            target_aspect_ratio = get_closest_aspect_ratio(w, h)
-                            qwen_target_size = get_qwen_size(target_aspect_ratio)
-                    except Exception as e:
-                        pass
                     
                 dl_base_name = f"{base_src}_{tpl_name}_{ts}" if tpl_name else f"{base_src}_{ts}"
                 dl_base_name = re.sub(r'[\\/*?:"<>|]', "", dl_base_name)
@@ -199,10 +176,6 @@ async def process_queue():
                         final_prompt += f"\n\n请尽量避免出现以下元素：{negative_prompt}"
                         
                     payload = {"model": mm_model, "prompt": final_prompt, "response_format": "base64", "n": 1, "prompt_optimizer": True}
-                    mm_ratios = ["1:1", "16:9", "4:3", "3:2", "2:3", "3:4", "9:16"]
-                    if mm_model == "image-01": mm_ratios.append("21:9")
-                        
-                    payload["aspect_ratio"] = target_aspect_ratio if target_aspect_ratio in mm_ratios else "1:1"
                         
                     if img_path and os.path.exists(img_path):
                         with open(img_path, "rb") as f:
@@ -240,7 +213,8 @@ async def process_queue():
                             
                     content_list.append({"text": prompt})
                     messages = [{"role": "user", "content": content_list}]
-                    kwargs = {"model": "qwen-image-2.0-pro", "messages": messages, "n": 1, "size": qwen_target_size, "prompt_extend": True, "watermark": False}
+                    # Qwen 回退为强制 1024*1024
+                    kwargs = {"model": "qwen-image-2.0-pro", "messages": messages, "n": 1, "size": "1024*1024", "prompt_extend": True, "watermark": False}
                     if negative_prompt: kwargs["negative_prompt"] = negative_prompt
                     
                     rsp = await asyncio.to_thread(MultiModalConversation.call, **kwargs)
@@ -260,7 +234,6 @@ async def process_queue():
                 else:
                     final_prompt_text = prompt
                     if negative_prompt: final_prompt_text += f"\n\nNegative Constraints (DO NOT INCLUDE): {negative_prompt}"
-                    final_prompt_text += f"\n\n[CRITICAL: Output image aspect ratio MUST rigidly be {target_aspect_ratio}. Do NOT force a square output if the requested ratio is different.]"
 
                     contents = []
                     if img_path and os.path.exists(img_path):
