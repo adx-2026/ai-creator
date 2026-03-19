@@ -396,8 +396,12 @@ async def create_job(
     images: Optional[List[UploadFile]] = File(None), curr: dict = Depends(get_current_user)
 ):
     user = curr["username"]
-    prompt_list = [p.strip() for p in prompts.split("\n") if p.strip()]
-    if not prompt_list: return {"error": "No prompts provided"}
+    
+    # 取消了通过换行拆分的逻辑，直接将整个去首尾空格的字符串作为一个任务
+    prompt_str = prompts.strip()
+    if not prompt_str: 
+        return {"error": "No prompt provided"}
+    prompt_list = [prompt_str]
         
     source_image_paths = []
     if mode == "i2i" and images:
