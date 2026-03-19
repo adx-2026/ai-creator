@@ -147,7 +147,7 @@
                             </div>
 
                             <div class="p-6 md:p-8">
-                                <div class="flex space-x-3 mb-8 bg-gray-100 p-1.5 rounded-full inline-flex">
+                                <div class="flex flex-wrap gap-3 mb-8 bg-gray-100 p-1.5 rounded-full inline-flex">
                                     <button @click="form.mode = 't2i'"
                                         :class="form.mode === 't2i' ? 'bg-white text-indigo-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'"
                                         class="px-6 py-2 rounded-full font-semibold transition-all text-sm">
@@ -157,6 +157,11 @@
                                         :class="form.mode === 'i2i' ? 'bg-white text-indigo-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'"
                                         class="px-6 py-2 rounded-full font-semibold transition-all text-sm">
                                         <i class="fas fa-images mr-2"></i>图像生成图片
+                                    </button>
+                                    <button @click="form.mode = 'fission'"
+                                        :class="form.mode === 'fission' ? 'bg-white text-indigo-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'"
+                                        class="px-6 py-2 rounded-full font-semibold transition-all text-sm">
+                                        <i class="fas fa-sitemap mr-2"></i>图片裂变
                                     </button>
                                 </div>
 
@@ -175,7 +180,7 @@
                                     </div>
                                 </div>
 
-                                <div class="mb-8">
+                                <div class="mb-8" v-show="form.mode !== 'fission'">
                                     <div class="flex items-center justify-between mb-2">
                                         <label class="block text-sm font-semibold text-gray-700">
                                             <i class="fas fa-bookmark text-indigo-500 mr-1"></i>快捷加载提示模板 <span
@@ -210,9 +215,9 @@
                                     </div>
                                 </div>
 
-                                <div v-show="form.mode === 'i2i'" class="mb-8">
-                                    <label class="block text-sm font-semibold text-gray-700 mb-2">多参考图片上传 <span
-                                            class="text-xs font-normal text-gray-400 ml-1">(支持拖拽，每上传一张图会独立生成一个任务)</span></label>
+                                <div v-show="['i2i', 'fission'].includes(form.mode)" class="mb-8">
+                                    <label class="block text-sm font-semibold text-gray-700 mb-2">参考图片上传 <span
+                                            class="text-xs font-normal text-gray-400 ml-1">(图生图每张独立生成，裂变模式单图扩增多张)</span></label>
                                     <div @dragover.prevent="isDragging = true" @dragleave.prevent="isDragging = false"
                                         @drop.prevent="onDrop"
                                         :class="{'border-indigo-500 bg-indigo-50 ring-4 ring-indigo-50': isDragging, 'border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-gray-400': !isDragging}"
@@ -257,11 +262,22 @@
                                     </div>
                                 </div>
 
+                                <div v-show="form.mode === 'fission'"
+                                    class="mb-8 bg-emerald-50 p-5 rounded-xl border border-emerald-100">
+                                    <label class="block text-sm font-semibold text-emerald-800 mb-2">裂变数量 (单图生成张数):
+                                        <span class="text-emerald-600 font-bold text-lg ml-2">{{ form.batch_size
+                                            }}</span></label>
+                                    <input type="range" v-model="form.batch_size" min="1" max="10"
+                                        class="w-full h-2 bg-emerald-200 rounded-lg appearance-none cursor-pointer">
+                                    <p class="text-xs text-emerald-600/80 mt-2"><i class="fas fa-info-circle"></i>
+                                        系统将基于每张上传的参考图，一次性生成 {{ form.batch_size }} 张风格相似的变体。</p>
+                                </div>
+
                                 <div class="mb-8">
                                     <label
                                         class="flex justify-between items-center text-sm font-semibold text-gray-700 mb-2">
                                         <span>创作提示词 <span class="text-xs font-normal text-gray-400 ml-1">(正向
-                                                Prompt)</span></span>
+                                                Prompt<span v-if="form.mode==='fission'">，裂变模式下选填</span>)</span></span>
                                     </label>
                                     <textarea v-model="form.prompts" rows="6"
                                         class="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-xl p-4 bg-gray-50 text-gray-800 transition-colors"
@@ -281,12 +297,10 @@
                                 <div
                                     class="flex items-center justify-between bg-gray-50 p-4 rounded-xl border border-gray-100">
                                     <div class="text-sm font-medium text-gray-500">
-                                        即将生成: <span class="text-indigo-600 font-bold text-lg">{{ form.mode==='i2i' &&
-                                            form.files.length>0 ? (promptCount * form.files.length) : promptCount
+                                        即将生成: <span class="text-indigo-600 font-bold text-lg">{{ calculateTotalTasks()
                                             }}</span> 个任务
                                     </div>
-                                    <button @click="submitJob"
-                                        :disabled="isSubmitting || !form.prompts.trim() || (form.mode==='i2i' && form.files.length===0)"
+                                    <button @click="submitJob" :disabled="isSubmitDisabled"
                                         class="inline-flex items-center px-8 py-3.5 border border-transparent text-base font-bold rounded-xl shadow-lg text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:-translate-y-0.5">
                                         <i class="fas fa-paper-plane mr-2" v-if="!isSubmitting"></i>
                                         <i class="fas fa-spinner fa-spin mr-2 text-lg" v-else></i>
@@ -334,10 +348,10 @@
                                     <div class="h-4 w-px bg-gray-300"></div>
                                     <span class="text-sm font-bold text-gray-700 flex items-center">
                                         <span class="bg-white p-1 rounded inline-flex shadow-sm mr-2">
-                                            <i :class="job.mode === 't2i' ? 'fas fa-font text-indigo-500' : 'fas fa-images text-purple-500'"
+                                            <i :class="job.mode === 't2i' ? 'fas fa-font text-indigo-500' : job.mode === 'i2i' ? 'fas fa-images text-purple-500' : 'fas fa-sitemap text-emerald-500'"
                                                 class="w-4 text-center"></i>
                                         </span>
-                                        {{ job.mode === 't2i' ? '文生图任务' : '图生图任务' }}
+                                        {{ job.mode === 't2i' ? '文生图任务' : job.mode === 'i2i' ? '图生图任务' : '图片裂变任务' }}
                                     </span>
                                     <span class="text-xs text-gray-500 ml-2" v-if="job.model_id">
                                         [<i class="fas fa-microchip mr-1"></i>{{ job.model_id }}]
@@ -606,7 +620,7 @@
 
                 const currentTab = ref('create');
                 const availableModels = ref([]);
-                const form = ref({ mode: 't2i', model_id: 'gemini-3.1-flash-image', prompts: '', negative_prompt: '', files: [], selectedTemplate: '' });
+                const form = ref({ mode: 't2i', model_id: 'gemini-3.1-flash-image', prompts: '', negative_prompt: '', files: [], selectedTemplate: '', batch_size: 4 });
                 const templates = ref({ public: [], private: [] });
 
                 const showSaveTemplateModal = ref(false);
@@ -623,8 +637,19 @@
 
                 const getToken = () => localStorage.getItem('auth_token') || '';
 
-                // 修改这里：只要文本框有值就视为1个任务
-                const promptCount = computed(() => form.value.prompts.trim() ? 1 : 0);
+                const calculateTotalTasks = () => {
+                    let pCount = form.value.mode === 'fission' ? 1 : (form.value.prompts.trim() ? 1 : 0);
+                    let fileCount = ['i2i', 'fission'].includes(form.value.mode) && form.value.files.length > 0 ? form.value.files.length : 1;
+                    let bSize = form.value.mode === 'fission' ? form.value.batch_size : 1;
+                    return pCount * fileCount * bSize;
+                };
+
+                const isSubmitDisabled = computed(() => {
+                    if (isSubmitting.value) return true;
+                    if (form.value.mode !== 'fission' && !form.value.prompts.trim()) return true;
+                    if (['i2i', 'fission'].includes(form.value.mode) && form.value.files.length === 0) return true;
+                    return false;
+                });
 
                 const authFetch = async (url, options = {}) => {
                     const token = getToken();
@@ -790,8 +815,8 @@
                 };
 
                 const submitJob = async () => {
-                    if (!form.value.prompts.trim()) return;
-                    if (form.value.mode === 'i2i' && form.value.files.length === 0) { alert("请至少上传一张参考图片"); return; }
+                    if (form.value.mode !== 'fission' && !form.value.prompts.trim()) return;
+                    if (['i2i', 'fission'].includes(form.value.mode) && form.value.files.length === 0) { alert("请至少上传一张参考图片"); return; }
 
                     isSubmitting.value = true;
                     const formData = new FormData();
@@ -799,12 +824,15 @@
                     formData.append('negative_prompt', form.value.negative_prompt);
                     formData.append('mode', form.value.mode);
                     formData.append('model_id', form.value.model_id);
+                    formData.append('batch_size', form.value.mode === 'fission' ? form.value.batch_size : 1);
 
                     let tplName = form.value.selectedTemplate;
                     if (tplName.includes(':')) tplName = tplName.split(':')[1];
                     formData.append('template_name', tplName);
 
-                    if (form.value.mode === 'i2i') form.value.files.forEach(file => formData.append('images', file));
+                    if (['i2i', 'fission'].includes(form.value.mode)) {
+                        form.value.files.forEach(file => formData.append('images', file));
+                    }
 
                     try {
                         const response = await authFetch('/api/jobs', { method: 'POST', body: formData });
@@ -864,7 +892,7 @@
                 return {
                     user, isLoggingIn, loginForm, currentTab, availableModels, form, templates,
                     showSaveTemplateModal, showTemplateManagerModal, newTemplate, isDragging, isSubmitting,
-                    isFetching, jobs, promptCount, fileInput, triggerFileInput, handleFileUpload, onDrop,
+                    isFetching, jobs, isSubmitDisabled, calculateTotalTasks, fileInput, triggerFileInput, handleFileUpload, onDrop,
                     removeFile, removeAllFiles, getObjectURL, submitJob, fetchJobs, deleteJob, handleTemplateSelect,
                     openSaveModal, saveTemplate, editTemplate, deleteTemplate, handleLogin, handleLogout,
                     formatDate, renderMarkdown, downloadImage, getToken

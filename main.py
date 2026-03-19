@@ -114,11 +114,11 @@ class JobQueue:
                 except Exception as e:
                     print(f"Error loading jobs for {user_dir}: {e}")
 
-    async def add_job(self, user, mode, prompts, source_image_paths=None, template_name="", template_content="", model_id="gemini-3.1-flash-image", negative_prompt=""):
+    async def add_job(self, user, mode, prompts, source_image_paths=None, template_name="", template_content="", model_id="gemini-3.1-flash-image", negative_prompt="", batch_size=1):
         job_id = str(uuid.uuid4())
-        total_tasks = len(prompts)
-        if mode == 'i2i' and source_image_paths:
-            total_tasks = len(prompts) * max(1, len(source_image_paths))
+        total_tasks = len(prompts) * batch_size
+        if mode in ['i2i', 'fission'] and source_image_paths:
+            total_tasks = len(prompts) * max(1, len(source_image_paths)) * batch_size
             
         self.jobs[job_id] = {
             "id": job_id, "user": user, "mode": mode, "model_id": model_id,
@@ -127,14 +127,14 @@ class JobQueue:
             "template_name": template_name, "negative_prompt": negative_prompt
         }
         self.sync_user_jobs(user)
-        await self.queue.put((job_id, user, prompts, source_image_paths, template_name, template_content, model_id, negative_prompt))
+        await self.queue.put((job_id, user, prompts, source_image_paths, template_name, template_content, model_id, negative_prompt, batch_size))
         return self.jobs[job_id]
 
 job_queue = JobQueue()
 
 async def process_queue():
     while True:
-        job_id, user, prompts, source_image_paths, tpl_name, tpl_content, model_id, negative_prompt = await job_queue.queue.get()
+        job_id, user, prompts, source_image_paths, tpl_name, tpl_content, model_id, negative_prompt, batch_size = await job_queue.queue.get()
         job = job_queue.jobs[job_id]
         job["status"] = "processing"
         job["started_at"] = time.time()
@@ -145,11 +145,13 @@ async def process_queue():
         os.makedirs(user_dir, exist_ok=True)
         
         tasks = []
-        if mode == 'i2i' and source_image_paths:
-            for img_path in source_image_paths:
-                for p in prompts: tasks.append((p, img_path))
-        else:
-            for p in prompts: tasks.append((p, None))
+        # 根据 batch_size 生成多次任务
+        for _ in range(batch_size):
+            if mode in ['i2i', 'fission'] and source_image_paths:
+                for img_path in source_image_paths:
+                    for p in prompts: tasks.append((p, img_path))
+            else:
+                for p in prompts: tasks.append((p, None))
                 
         avg_time = 5.0
         
@@ -391,20 +393,24 @@ def delete_template(scope: str, name: str, curr: dict = Depends(get_current_user
 
 @app.post("/api/jobs")
 async def create_job(
-    prompts: str = Form(...), negative_prompt: str = Form(""), mode: str = Form(...),
+    prompts: str = Form(""), negative_prompt: str = Form(""), mode: str = Form(...),
     template_name: str = Form(""), model_id: str = Form("gemini-3.1-flash-image"),
+    batch_size: int = Form(1),
     images: Optional[List[UploadFile]] = File(None), curr: dict = Depends(get_current_user)
 ):
     user = curr["username"]
-    
-    # 取消了通过换行拆分的逻辑，直接将整个去首尾空格的字符串作为一个任务
     prompt_str = prompts.strip()
-    if not prompt_str: 
+    
+    # 裂变模式允许不输入提示词，默认使用英文标准提示词
+    if mode == "fission" and not prompt_str:
+        prompt_str = "Generate a high-quality, stylistically similar variation of the provided reference image. Maintain the core subject, composition, and mood."
+    elif not prompt_str: 
         return {"error": "No prompt provided"}
+        
     prompt_list = [prompt_str]
         
     source_image_paths = []
-    if mode == "i2i" and images:
+    if mode in ["i2i", "fission"] and images:
         user_dir = f"users/{user}/outputs"
         os.makedirs(user_dir, exist_ok=True)
         for img in images:
@@ -413,7 +419,7 @@ async def create_job(
                 with open(path, "wb") as f: f.write(await img.read())
                 source_image_paths.append(path)
             
-    job = await job_queue.add_job(user, mode, prompt_list, source_image_paths, template_name, "", model_id, negative_prompt)
+    job = await job_queue.add_job(user, mode, prompt_list, source_image_paths, template_name, "", model_id, negative_prompt, batch_size)
     return job
 
 @app.get("/api/jobs")
