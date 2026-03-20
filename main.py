@@ -6,6 +6,7 @@ import re
 import base64
 import json
 import requests
+import io
 import dashscope
 from dashscope import MultiModalConversation
 from dotenv import load_dotenv
@@ -19,6 +20,42 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.security import OAuth2PasswordBearer
 import google.generativeai as genai
 import PIL.Image
+
+# ==========================================
+# 0. 新增：图像比例处理核心工具
+# ==========================================
+def crop_to_aspect_ratio(image: PIL.Image.Image, target_ratio_str: str) -> PIL.Image.Image:
+    """
+    将图片居中裁剪到指定的比例 (例如 '16:9', '3:2', '1:1')
+    """
+    try:
+        # 支持中英文冒号兼容
+        w_ratio, h_ratio = map(int, target_ratio_str.replace('：', ':').split(':'))
+        if w_ratio <= 0 or h_ratio <= 0: return image
+        target_aspect = w_ratio / h_ratio
+    except Exception:
+        # 如果解析失败（例如没传比例），原样返回
+        return image
+
+    original_w, original_h = image.size
+    original_aspect = original_w / original_h
+
+    # 误差在 0.01 以内认为比例已经正确，直接返回
+    if abs(original_aspect - target_aspect) < 0.01:
+        return image
+
+    if original_aspect > target_aspect:
+        # 原图更宽，按高度作为基准，左右两边裁剪
+        new_w = int(original_h * target_aspect)
+        left = (original_w - new_w) / 2
+        right = left + new_w
+        return image.crop((left, 0, right, original_h))
+    else:
+        # 原图更高，按宽度作为基准，上下两边裁剪
+        new_h = int(original_w / target_aspect)
+        top = (original_h - new_h) / 2
+        bottom = top + new_h
+        return image.crop((0, top, original_w, bottom))
 
 # ==========================================
 # 1. 基础配置与初始化
@@ -245,24 +282,29 @@ class JobQueue:
                             self.jobs[j["id"]] = j
                 except Exception: pass
 
-    async def add_job(self, user, mode, prompts, source_image_paths=None, template_name="", model_id="", negative_prompt="", batch_size=1):
+    # 修改：加入 target_ratio 参数
+    async def add_job(self, user, mode, prompts, source_image_paths=None, template_name="", model_id="", negative_prompt="", batch_size=1, target_ratio=""):
         job_id = str(uuid.uuid4())
         total_tasks = len(prompts) * max(1, len(source_image_paths) if source_image_paths else 1) * batch_size
         self.jobs[job_id] = {
             "id": job_id, "user": user, "mode": mode, "model_id": model_id,
             "status": "queued", "total": total_tasks, "completed": 0, "failed": 0,
             "results": [], "created_at": time.time(), "eta": None,
-            "template_name": template_name, "negative_prompt": negative_prompt
+            "template_name": template_name, "negative_prompt": negative_prompt,
+            "target_ratio": target_ratio # 记录比例信息
         }
         self.sync_user_jobs(user)
-        await self.queue.put((job_id, user, prompts, source_image_paths, template_name, model_id, negative_prompt, batch_size))
+        await self.queue.put((job_id, user, prompts, source_image_paths, template_name, model_id, negative_prompt, batch_size, target_ratio))
         return self.jobs[job_id]
 
 job_queue = JobQueue()
 
 async def process_queue():
     while True:
-        job_id, user, prompts, source_image_paths, tpl_name, model_id, negative_prompt, batch_size = await job_queue.queue.get()
+        # 解包时加入 target_ratio
+        job_data = await job_queue.queue.get()
+        job_id, user, prompts, source_image_paths, tpl_name, model_id, negative_prompt, batch_size, target_ratio = job_data
+        
         job = job_queue.jobs[job_id]
         job["status"] = "processing"
         user_dir = f"users/{user}/outputs"
@@ -285,6 +327,20 @@ async def process_queue():
                 
                 generated_images, final_text = await provider.generate(model_id, prompt, negative_prompt, img_path, user_dir, dl_base_name, user)
                 
+                # --- 新增：强制应用目标比例（生成后的后处理裁剪） ---
+                if target_ratio and generated_images:
+                    for img_info in generated_images:
+                        filename = img_info["url"].split('/')[-1]
+                        filepath = os.path.join(user_dir, filename)
+                        if os.path.exists(filepath):
+                            try:
+                                with PIL.Image.open(filepath) as img:
+                                    cropped = crop_to_aspect_ratio(img, target_ratio)
+                                    cropped.save(filepath)
+                            except Exception as e:
+                                print(f"Error applying ratio {target_ratio}: {e}")
+                # ----------------------------------------------------
+
                 job["results"].append({
                     "prompt": prompt, "source_img": os.path.basename(img_path).split('_', 1)[-1] if img_path else None,
                     "result": final_text.strip(), "images": generated_images, "status": "success"
@@ -362,6 +418,7 @@ def delete_template(scope: str, name: str, curr: dict = Depends(get_current_user
 async def create_job(
     prompts: str = Form(""), negative_prompt: str = Form(""), mode: str = Form(...),
     template_name: str = Form(""), model_id: str = Form(""), batch_size: int = Form(1),
+    target_ratio: str = Form(""), # 新增：接收前端传来的比例参数
     images: Optional[List[UploadFile]] = File(None), curr: dict = Depends(get_current_user)
 ):
     user, prompt_str = curr["username"], prompts.strip()
@@ -374,11 +431,51 @@ async def create_job(
         for img in images:
             if img and getattr(img, "filename", None):
                 path = os.path.join(f"users/{user}/outputs", f"{uuid.uuid4().hex[:8]}_{img.filename}")
-                with open(path, "wb") as f: f.write(await img.read())
+                img_data = await img.read()
+                
+                # 新增：如果在图生图时选择了比例，先把原图按比例裁剪好，再喂给 AI，提高出图准确率
+                if target_ratio:
+                    try:
+                        with PIL.Image.open(io.BytesIO(img_data)) as pil_img:
+                            cropped_img = crop_to_aspect_ratio(pil_img, target_ratio)
+                            cropped_img.save(path)
+                    except Exception:
+                        with open(path, "wb") as f: f.write(img_data)
+                else:
+                    with open(path, "wb") as f: f.write(img_data)
+                    
                 source_paths.append(path)
                 
-    job = await job_queue.add_job(user, mode, [prompt_str], source_paths, template_name, model_id, negative_prompt, batch_size)
+    job = await job_queue.add_job(user, mode, [prompt_str], source_paths, template_name, model_id, negative_prompt, batch_size, target_ratio)
     return job
+
+# 新增：独立的小工具接口，如果用户只想单纯剪裁图片不跑AI，可以调这个
+@app.post("/api/tools/convert_ratio")
+async def convert_image_ratio(
+    target_ratio: str = Form(...), 
+    image: UploadFile = File(...), 
+    curr: dict = Depends(get_current_user)
+):
+    """纯本地裁剪工具接口，秒出结果"""
+    try:
+        img_data = await image.read()
+        with PIL.Image.open(io.BytesIO(img_data)) as pil_img:
+            cropped = crop_to_aspect_ratio(pil_img, target_ratio)
+            
+            user_dir = f"users/{curr['username']}/outputs"
+            os.makedirs(user_dir, exist_ok=True)
+            ext = image.filename.split('.')[-1] if '.' in image.filename else 'png'
+            filename = f"crop_{uuid.uuid4().hex[:8]}.{ext}"
+            filepath = os.path.join(user_dir, filename)
+            cropped.save(filepath)
+            
+            return {
+                "success": True, 
+                "url": f"/api/images/{curr['username']}/{filename}",
+                "ratio": target_ratio
+            }
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"error": f"比例转换失败: {str(e)}"})
 
 @app.get("/api/jobs")
 def get_jobs(curr: dict = Depends(get_current_user)):
