@@ -1,3 +1,4 @@
+# main.py
 import asyncio
 import time
 import uuid
@@ -7,6 +8,7 @@ import base64
 import json
 import requests
 import io
+import zipfile
 import dashscope
 from dashscope import MultiModalConversation
 from dotenv import load_dotenv
@@ -15,7 +17,7 @@ from datetime import datetime
 
 load_dotenv()
 from fastapi import FastAPI, UploadFile, File, Form, Request, HTTPException, Depends, Query
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import OAuth2PasswordBearer
 import google.generativeai as genai
@@ -322,7 +324,7 @@ async def process_queue():
         
         tasks = []
         for _ in range(batch_size):
-            if job["mode"] in ['i2i', 'fission', 'convert'] and source_image_paths: # convert 模式也需要按图循环
+            if job["mode"] in ['i2i', 'fission', 'convert'] and source_image_paths:
                 tasks.extend([(p, img_path) for img_path in source_image_paths for p in prompts])
             else:
                 tasks.extend([(p, None) for p in prompts])
@@ -334,7 +336,6 @@ async def process_queue():
                 base_src = os.path.splitext(os.path.basename(img_path).split('_', 1)[-1])[0] if img_path else "t2i"
                 dl_base_name = re.sub(r'[\\/*?:"<>|]', "", f"{base_src}_{tpl_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}" if tpl_name else f"{base_src}_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
                 
-                # 传入 target_ratio 让 Provider 底层进行 AI 处理
                 generated_images, final_text = await provider.generate(model_id, prompt, negative_prompt, img_path, user_dir, dl_base_name, user, target_ratio)
                 
                 job["results"].append({
@@ -417,7 +418,7 @@ async def create_job(
     target_ratio: str = Form(""),
     images: Optional[List[UploadFile]] = File(None), curr: dict = Depends(get_current_user)
 ):
-    user, prompt_str = curr["username"], prompts.strip()
+    user, prompt_str = prompts.strip(), prompts.strip()
     
     # --- 关键逻辑变更 ---
     if mode == "fission" and not prompt_str: 
@@ -429,24 +430,24 @@ async def create_job(
     
     source_paths = []
     if mode in ["i2i", "fission", "convert"] and images:
-        os.makedirs(f"users/{user}/outputs", exist_ok=True)
+        os.makedirs(f"users/{curr['username']}/outputs", exist_ok=True)
         for img in images:
             if img and getattr(img, "filename", None):
-                path = os.path.join(f"users/{user}/outputs", f"{uuid.uuid4().hex[:8]}_{img.filename}")
+                path = os.path.join(f"users/{curr['username']}/outputs", f"{uuid.uuid4().hex[:8]}_{img.filename}")
                 img_data = await img.read()
                 
-                # 由于比例交由 AI 模型原生处理，此处不再进行任何本地裁切拦截，原图直传
                 with open(path, "wb") as f: 
                     f.write(img_data)
                     
                 source_paths.append(path)
                 
-    job = await job_queue.add_job(user, mode, [prompt_str], source_paths, template_name, model_id, negative_prompt, batch_size, target_ratio)
+    job = await job_queue.add_job(curr['username'], mode, [prompt_str], source_paths, template_name, model_id, negative_prompt, batch_size, target_ratio)
     return job
 
 @app.get("/api/jobs")
 def get_jobs(curr: dict = Depends(get_current_user)):
     return sorted([j for j in job_queue.jobs.values() if j.get("user") == curr["username"]], key=lambda x: x['created_at'], reverse=True)
+
 @app.delete("/api/jobs/{job_id}")
 def delete_job(job_id: str, curr: dict = Depends(get_current_user)):
     job = job_queue.jobs.get(job_id)
@@ -454,10 +455,37 @@ def delete_job(job_id: str, curr: dict = Depends(get_current_user)):
     del job_queue.jobs[job_id]
     job_queue.sync_user_jobs(job["user"])
     return {"success": True}
+
 @app.get("/api/images/{username}/{filename}")
 async def serve_img(username: str, filename: str, curr: dict = Depends(get_current_user)):
     if curr["username"] != username and not curr["is_admin"]: return JSONResponse(status_code=403, content={"error": "Forbidden"})
     path = os.path.join(f"users/{username}/outputs", filename)
     return FileResponse(path) if os.path.exists(path) else JSONResponse(status_code=404, content={"error": "Not found"})
+
+@app.get("/api/jobs/{job_id}/download")
+def download_job_images(job_id: str, curr: dict = Depends(get_current_user)):
+    job = job_queue.jobs.get(job_id)
+    if not job or (job["user"] != curr["username"] and not curr["is_admin"]):
+        return JSONResponse(status_code=403, content={"error": "Forbidden"})
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+        for res in job.get("results", []):
+            for img in res.get("images", []):
+                # 提取本地文件名
+                filename = img["url"].split("/")[-1]
+                file_path = os.path.join(f"users/{job['user']}/outputs", filename)
+                if os.path.exists(file_path):
+                    # 为了防止批处理产生的名字重复覆盖，在压缩包内拼接上生成的唯一标识作为文件名前缀
+                    unique_prefix = filename.split('_')[1].split('.')[0] if '_' in filename else uuid.uuid4().hex[:6]
+                    zip_name = f"{unique_prefix}_{img.get('download_name', filename)}"
+                    zip_file.write(file_path, arcname=zip_name)
+
+    zip_buffer.seek(0)
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename=job_{job_id}_images.zip"}
+    )
 
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
