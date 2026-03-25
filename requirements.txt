@@ -4,4 +4,3 @@ python-multipart
 google-generativeai
 pillow
 dashscope
-PIL
