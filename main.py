@@ -375,7 +375,7 @@ class DoubaoProvider(ImageProvider):
             prompt += f"\n\n[要求：请严格按照 {target_ratio} 的横纵比例生成或处理图像。]"
             
         final_prompt = prompt + (f"\n\n请尽量避免出现以下元素：{negative_prompt}" if negative_prompt else "")
-        payload = {"model": model_id, "prompt": final_prompt, "response_format": "url", "size": "2K", "stream": False, "watermark": True}
+        payload = {"model": model_id, "prompt": final_prompt, "response_format": "url", "size": "2K", "stream": False, "watermark": False}
         
         if img_path and os.path.exists(img_path):
             with open(img_path, "rb") as f: b64_data = base64.b64encode(f.read()).decode('utf-8')
