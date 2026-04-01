@@ -891,7 +891,8 @@ def get_templates(curr: dict = Depends(get_current_user)):
     return {"public": pub, "private": priv}
 @app.post("/api/templates")
 async def save_template(request: Request, curr: dict = Depends(get_current_user)):
-    data, user, is_pub = await request.json(), curr["username"], data.get("is_public", False)
+    data = await request.json()
+    user, is_pub = curr["username"], data.get("is_public", False)
     target = PUBLIC_TEMPLATES_FILE if is_pub else f"users/{user}/templates.json"
     items = json.load(open(target, "r", encoding="utf-8")) if os.path.exists(target) else []
     new_item = {"name": data["name"], "content": data["content"], "negative_prompt": data.get("negative_prompt", ""), "author": user}
