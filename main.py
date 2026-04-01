@@ -71,6 +71,8 @@ for k, v in raw_config.get("users", {}).items():
     if isinstance(v, str): USERS[k] = {"password": v, "is_admin": (k == "admin")}
     else: USERS[k] = v
 
+SUBTASK_CONCURRENCY = max(1, int(raw_config.get("subtask_concurrency", 3)))
+
 SESSIONS = {}
 app = FastAPI()
 os.makedirs("users", exist_ok=True)
@@ -705,51 +707,57 @@ async def process_queue():
             provider = get_provider_for_model(model_id)
             tasks = [t for t in job.get("subtasks", []) if t.get("status") == "pending"]
 
-            avg_time = 15.0
-            for i, subtask in enumerate(tasks):
-                start_time = time.time()
-                img_path = subtask.get("source_img")
-                subtask["attempts"] = subtask.get("attempts", 0) + 1
-                try:
-                    # 步骤 1：VL 提取图案描述
-                    extracted_prompt = await extract_pattern_prompt(img_path)
+            sem_extract = asyncio.Semaphore(SUBTASK_CONCURRENCY)
+            completed_times_extract: List[float] = []
 
-                    # 步骤 2：使用提取的 prompt + 原图生成 batch_size 张图片
-                    all_images = []
-                    for j in range(batch_size):
-                        dl_base_name = re.sub(r'[\\/*?:"<>|]', "", f"extract_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{j+1}")
-                        imgs, _ = await run_with_retries(
-                            lambda p=extracted_prompt, b=dl_base_name: provider.generate(model_id, p, "", img_path, user_dir, b, user, target_ratio),
-                            model_id=model_id,
-                        )
-                        all_images.extend(imgs)
-                        if j < batch_size - 1:
-                            await asyncio.sleep(0.2)
+            async def run_extract_subtask(subtask):
+                async with sem_extract:
+                    start_time = time.time()
+                    img_path = subtask.get("source_img")
+                    subtask["attempts"] = subtask.get("attempts", 0) + 1
+                    try:
+                        # 步骤 1：VL 提取图案描述
+                        extracted_prompt = await extract_pattern_prompt(img_path)
 
-                    subtask["status"] = "success"
-                    upsert_task_result(job, subtask, {
-                        "prompt": extracted_prompt,
-                        "extracted_prompt": extracted_prompt,
-                        "source_img": os.path.basename(img_path).split("_", 1)[-1] if img_path else None,
-                        "images": all_images,
-                        "status": "success",
-                        "attempts": subtask["attempts"],
-                    })
-                except Exception as e:
-                    subtask["status"] = "error"
-                    upsert_task_result(job, subtask, {
-                        "prompt": "",
-                        "source_img": os.path.basename(img_path).split("_", 1)[-1] if img_path else None,
-                        "error": str(e),
-                        "status": "error",
-                        "attempts": subtask["attempts"],
-                    })
+                        # 步骤 2：使用提取的 prompt + 原图生成 batch_size 张图片
+                        all_images = []
+                        for j in range(batch_size):
+                            dl_base_name = re.sub(r'[\\/*?:"<>|]', "", f"extract_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{j+1}_{uuid.uuid4().hex[:4]}")
+                            imgs, _ = await run_with_retries(
+                                lambda p=extracted_prompt, b=dl_base_name: provider.generate(model_id, p, "", img_path, user_dir, b, user, target_ratio),
+                                model_id=model_id,
+                            )
+                            all_images.extend(imgs)
+                            if j < batch_size - 1:
+                                await asyncio.sleep(0.2)
 
-                refresh_job_progress(job)
-                avg_time = (avg_time * i + (time.time() - start_time)) / (i + 1)
-                pending_count = sum(1 for t in job.get("subtasks", []) if t.get("status") == "pending")
-                job["eta"] = max(0, pending_count * avg_time)
-                job_queue.sync_user_jobs(user)
+                        subtask["status"] = "success"
+                        upsert_task_result(job, subtask, {
+                            "prompt": extracted_prompt,
+                            "extracted_prompt": extracted_prompt,
+                            "source_img": os.path.basename(img_path).split("_", 1)[-1] if img_path else None,
+                            "images": all_images,
+                            "status": "success",
+                            "attempts": subtask["attempts"],
+                        })
+                    except Exception as e:
+                        subtask["status"] = "error"
+                        upsert_task_result(job, subtask, {
+                            "prompt": "",
+                            "source_img": os.path.basename(img_path).split("_", 1)[-1] if img_path else None,
+                            "error": str(e),
+                            "status": "error",
+                            "attempts": subtask["attempts"],
+                        })
+                    elapsed = time.time() - start_time
+                    completed_times_extract.append(elapsed)
+                    avg_time = sum(completed_times_extract) / len(completed_times_extract)
+                    pending_count = sum(1 for t in job.get("subtasks", []) if t.get("status") == "pending")
+                    job["eta"] = max(0, (pending_count / SUBTASK_CONCURRENCY) * avg_time)
+                    refresh_job_progress(job)
+                    job_queue.sync_user_jobs(user)
+
+            await asyncio.gather(*[run_extract_subtask(t) for t in tasks])
 
             job["status"] = "completed"
             job["eta"] = 0
@@ -803,56 +811,54 @@ async def process_queue():
             continue
 
         # ==========================================
-        # 图像生成模式 (原有逻辑)
+        # 图像生成模式 (并发执行)
         # ==========================================
         provider = get_provider_for_model(model_id)
-
         tasks = [t for t in job.get("subtasks", []) if t.get("status") == "pending"]
 
-        avg_time = 5.0
-        for i, subtask in enumerate(tasks):
-            start_time = time.time()
-            prompt = subtask.get("prompt", "")
-            img_path = subtask.get("source_img")
-            try:
-                base_src = os.path.splitext(os.path.basename(img_path).split('_', 1)[-1])[0] if img_path else "t2i"
-                dl_base_name = re.sub(r'[\\/*?:"<>|]', "", f"{base_src}_{tpl_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}" if tpl_name else f"{base_src}_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+        sem = asyncio.Semaphore(SUBTASK_CONCURRENCY)
+        completed_times: List[float] = []
 
-                # --- 添加重试机制与指数退避 (Exponential Backoff) 处理频控限流问题 ---
-                subtask["attempts"] = subtask.get("attempts", 0) + 1
-                generated_images, final_text = await run_with_retries(
-                    lambda: provider.generate(model_id, prompt, negative_prompt, img_path, user_dir, dl_base_name, user, target_ratio),
-                    model_id=model_id,
-                )
+        async def run_image_subtask(subtask):
+            async with sem:
+                start_time = time.time()
+                prompt = subtask.get("prompt", "")
+                img_path = subtask.get("source_img")
+                try:
+                    base_src = os.path.splitext(os.path.basename(img_path).split('_', 1)[-1])[0] if img_path else "t2i"
+                    dl_base_name = re.sub(r'[\\/*?:"<>|]', "", f"{base_src}_{tpl_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:4]}" if tpl_name else f"{base_src}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:4]}")
+                    subtask["attempts"] = subtask.get("attempts", 0) + 1
+                    generated_images, final_text = await run_with_retries(
+                        lambda: provider.generate(model_id, prompt, negative_prompt, img_path, user_dir, dl_base_name, user, target_ratio),
+                        model_id=model_id,
+                    )
+                    subtask["status"] = "success"
+                    upsert_task_result(job, subtask, {
+                        "prompt": prompt,
+                        "source_img": os.path.basename(img_path).split('_', 1)[-1] if img_path else None,
+                        "result": final_text.strip(),
+                        "images": generated_images,
+                        "status": "success",
+                        "attempts": subtask["attempts"],
+                    })
+                except Exception as e:
+                    subtask["status"] = "error"
+                    upsert_task_result(job, subtask, {
+                        "prompt": prompt,
+                        "source_img": os.path.basename(img_path).split('_', 1)[-1] if img_path else None,
+                        "error": str(e),
+                        "status": "error",
+                        "attempts": subtask["attempts"],
+                    })
+                elapsed = time.time() - start_time
+                completed_times.append(elapsed)
+                avg_time = sum(completed_times) / len(completed_times)
+                pending_count = sum(1 for t in job.get("subtasks", []) if t.get("status") == "pending")
+                job["eta"] = max(0, (pending_count / SUBTASK_CONCURRENCY) * avg_time)
+                refresh_job_progress(job)
+                job_queue.sync_user_jobs(user)
 
-                subtask["status"] = "success"
-                upsert_task_result(job, subtask, {
-                    "prompt": prompt,
-                    "source_img": os.path.basename(img_path).split('_', 1)[-1] if img_path else None,
-                    "result": final_text.strip(),
-                    "images": generated_images,
-                    "status": "success",
-                    "attempts": subtask["attempts"],
-                })
-            except Exception as e:
-                subtask["status"] = "error"
-                upsert_task_result(job, subtask, {
-                    "prompt": prompt,
-                    "source_img": os.path.basename(img_path).split('_', 1)[-1] if img_path else None,
-                    "error": str(e),
-                    "status": "error",
-                    "attempts": subtask["attempts"],
-                })
-
-            refresh_job_progress(job)
-            avg_time = (avg_time * i + (time.time() - start_time)) / (i + 1)
-            pending_count = sum(1 for t in job.get("subtasks", []) if t.get("status") == "pending")
-            job["eta"] = max(0, pending_count * avg_time)
-            job_queue.sync_user_jobs(user)
-
-            # 请求间隙平滑缓冲，避免连续瞬发打满通道引发 BurstRate limit
-            if i < len(tasks) - 1:
-                await asyncio.sleep(0.2)
+        await asyncio.gather(*[run_image_subtask(t) for t in tasks])
 
         job["status"] = "completed"
         job["eta"] = 0

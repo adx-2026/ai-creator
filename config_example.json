@@ -8,5 +8,6 @@
             "password": "123456",
             "is_admin": false
         }
-    }
+    },
+    "subtask_concurrency": 3
 }
