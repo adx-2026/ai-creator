@@ -704,13 +704,23 @@
                                         <div v-for="(res, idx) in job.results" :key="idx"
                                             class="bg-white rounded-2xl p-4 border border-gray-200 shadow-sm transition-all relative flex flex-col hover:border-indigo-300 hover:shadow-md">
                                             <div class="mb-3 border-b border-gray-50 pb-3">
-                                                <div v-if="job.mode === 'extract'"
-                                                    class="mb-2 text-[11px] font-semibold text-indigo-500 bg-indigo-50 inline-flex items-center px-2 py-0.5 rounded border border-indigo-100">
-                                                    <i class="fas fa-magic mr-1"></i>AI 提取的图案描述
+                                                <div class="flex items-start justify-between gap-2 mb-1">
+                                                    <div class="flex-1 min-w-0">
+                                                        <div v-if="job.mode === 'extract'"
+                                                            class="mb-2 text-[11px] font-semibold text-indigo-500 bg-indigo-50 inline-flex items-center px-2 py-0.5 rounded border border-indigo-100">
+                                                            <i class="fas fa-magic mr-1"></i>AI 提取的图案描述
+                                                        </div>
+                                                        <div
+                                                            class="text-sm font-bold text-gray-800 line-clamp-2 leading-relaxed tracking-wide">
+                                                            "{{ res.prompt }}"</div>
+                                                    </div>
+                                                    <button v-if="res.prompt && res.status === 'success'"
+                                                        @click="openSaveModalFromResult(res, job)"
+                                                        class="flex-shrink-0 w-7 h-7 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-400 hover:text-indigo-600 border border-indigo-100 flex items-center justify-center transition-colors"
+                                                        title="保存为提示词模板">
+                                                        <i class="fas fa-bookmark text-xs"></i>
+                                                    </button>
                                                 </div>
-                                                <div
-                                                    class="text-sm font-bold text-gray-800 line-clamp-2 leading-relaxed tracking-wide">
-                                                    "{{ res.prompt }}"</div>
                                                 <div v-if="job.negative_prompt"
                                                     class="mt-2 text-xs font-medium text-slate-500 line-clamp-1 bg-slate-50/80 inline-block px-2 py-1 rounded-md border border-slate-200">
                                                     <i class="fas fa-eye-slash mr-1 opacity-70"></i>排除: {{
@@ -1458,6 +1468,16 @@
                     showSaveTemplateModal.value = true;
                 };
 
+                const openSaveModalFromResult = (res, job) => {
+                    newTemplate.value = {
+                        name: '',
+                        content: res.prompt || '',
+                        negative_prompt: job.negative_prompt || '',
+                        is_public: false,
+                    };
+                    showSaveTemplateModal.value = true;
+                };
+
                 const saveTemplate = async () => {
                     if (!newTemplate.value.name || !newTemplate.value.content) return;
                     try {
@@ -1848,7 +1868,7 @@
                     showSaveTemplateModal, showTemplateManagerModal, newTemplate, isDragging, isSubmitting,
                     isFetching, retryingJobs, retryingTasks, jobs, isSubmitDisabled, calculateTotalTasks, fileInput, triggerFileInput, handleFileUpload, onDrop, handlePaste,
                     removeFile, removeAllFiles, getObjectURL, submitJob, fetchJobs, deleteJob, retryFailedTasks, retryTask, hasFailedResults, handleTemplateSelect,
-                    openSaveModal, saveTemplate, editTemplate, deleteTemplate, handleLogin, handleLogout,
+                    openSaveModal, openSaveModalFromResult, saveTemplate, editTemplate, deleteTemplate, handleLogin, handleLogout,
                     formatDate, renderMarkdown, downloadImage, getToken, hasImages, downloadAll,
                     isVideoFile, filteredModels, estimateCredits, isAliyunModel,
                     jobDetailModal, openJobDetail, getModeLabel, getSubtaskResult,
