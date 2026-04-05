@@ -381,7 +381,10 @@
                                     <label class="block text-sm font-semibold text-gray-700 mb-2">
                                         <span v-if="form.mode === 'convert'">上传需要重绘比例的图片</span>
                                         <span v-else-if="['video','multi_video'].includes(form.mode)">参考素材上传 <span
-                                                class="text-xs font-normal text-rose-500 ml-1">(可选，所有视频共享同一参考图)</span></span>
+                                                v-if="/r2v|i2v/.test(form.model_id)"
+                                                class="text-xs font-normal text-rose-600 ml-1 font-semibold">(必填，该模型需要参考图片或视频)</span>
+                                            <span v-else
+                                                class="text-xs font-normal text-rose-400 ml-1">(可选，所有视频共享同一参考素材)</span></span>
                                         <span v-else-if="form.mode === 'extract'">产品图片上传 <span
                                                 class="text-xs font-normal text-indigo-400 ml-1">(AI 将自动识别图案并生成变体，每张图独立处理)</span></span>
                                         <span v-else-if="form.mode === 'ecommerce'">产品图片上传 <span
@@ -391,26 +394,26 @@
                                     </label>
                                     <div @dragover.prevent="isDragging = true" @dragleave.prevent="isDragging = false"
                                         @drop.prevent="onDrop"
-                                        :class="{'border-rose-400 bg-rose-50 ring-4 ring-rose-50': isDragging && form.mode === 'video', 'border-purple-500 bg-purple-50 ring-4 ring-purple-50': isDragging && form.mode === 'ecommerce', 'border-indigo-500 bg-indigo-50 ring-4 ring-indigo-50': isDragging && form.mode !== 'video' && form.mode !== 'ecommerce', 'border-purple-200 bg-purple-50/30': !isDragging && form.mode === 'ecommerce', 'border-indigo-200 bg-indigo-50/30': !isDragging && form.mode === 'extract', 'border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-gray-400': !isDragging && form.mode !== 'extract' && form.mode !== 'ecommerce'}"
+                                        :class="{'border-rose-400 bg-rose-50 ring-4 ring-rose-50': isDragging && ['video','multi_video'].includes(form.mode), 'border-purple-500 bg-purple-50 ring-4 ring-purple-50': isDragging && form.mode === 'ecommerce', 'border-indigo-500 bg-indigo-50 ring-4 ring-indigo-50': isDragging && !['video','multi_video'].includes(form.mode) && form.mode !== 'ecommerce', 'border-purple-200 bg-purple-50/30': !isDragging && form.mode === 'ecommerce', 'border-indigo-200 bg-indigo-50/30': !isDragging && form.mode === 'extract', 'border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-gray-400': !isDragging && form.mode !== 'extract' && form.mode !== 'ecommerce'}"
                                         class="mt-1 flex flex-col justify-center items-center px-6 py-12 border-2 border-dashed rounded-xl transition-all cursor-pointer min-h-[200px]"
                                         @click="triggerFileInput" tabindex="0">
                                         <div class="space-y-3 text-center pointer-events-none">
                                             <div class="bg-white p-4 rounded-full shadow-sm inline-block">
-                                                <i :class="form.mode === 'video' ? 'fas fa-photo-video text-rose-500' : 'fas fa-cloud-upload-alt text-indigo-500'"
+                                                <i :class="['video','multi_video'].includes(form.mode) ? 'fas fa-photo-video text-rose-500' : 'fas fa-cloud-upload-alt text-indigo-500'"
                                                     class="text-3xl"></i>
                                             </div>
                                             <div class="text-base text-gray-700 font-medium">
                                                 <span
-                                                    :class="form.mode === 'video' ? 'text-rose-600' : 'text-indigo-600'">点击上传</span>
+                                                    :class="['video','multi_video'].includes(form.mode) ? 'text-rose-600' : 'text-indigo-600'">点击上传</span>
                                                 、拖拽或粘贴文件到此区域
                                             </div>
-                                            <p class="text-xs text-gray-400" v-if="form.mode === 'video'">支持图片（JPG / PNG
+                                            <p class="text-xs text-gray-400" v-if="['video','multi_video'].includes(form.mode)">支持图片（JPG / PNG
                                                 / WEBP / BMP）和视频（MP4 / MOV）；可直接 Ctrl+V 粘贴</p>
                                             <p class="text-xs text-gray-400" v-else>支持批量选中 JPG / PNG / WEBP 格式图片；可直接 Ctrl+V 粘贴</p>
                                         </div>
                                         <input id="file-upload" type="file" multiple class="hidden"
                                             @change="handleFileUpload"
-                                            :accept="form.mode === 'video' ? 'image/jpeg,image/png,image/webp,image/bmp,video/mp4,video/quicktime' : 'image/*'"
+                                            :accept="['video','multi_video'].includes(form.mode) ? 'image/jpeg,image/png,image/webp,image/bmp,video/mp4,video/quicktime' : 'image/*'"
                                             ref="fileInput">
                                     </div>
                                     <div v-if="form.files.length > 0"
@@ -1389,13 +1392,16 @@
                     if (isSubmitting.value || ecFlowState.value !== 'idle') return true;
                     if (form.value.mode === 'convert') {
                         if (form.value.files.length === 0 || !form.value.target_ratio) return true;
-                    } else if (form.value.mode === 'video') {
-                        if (!form.value.prompts.trim()) return true;
+                    } else if (['video', 'multi_video'].includes(form.value.mode)) {
+                        const needsRef = /r2v|i2v/.test(form.value.model_id);
+                        if (form.value.mode === 'video' && !form.value.prompts.trim()) return true;
+                        if (form.value.mode === 'multi_video' && multiLineCount.value === 0) return true;
+                        if (needsRef && form.value.files.length === 0) return true;
                     } else if (form.value.mode === 'extract') {
                         if (form.value.files.length === 0) return true;
                     } else if (form.value.mode === 'ecommerce') {
                         if (form.value.files.length === 0) return true;
-                    } else if (['multi_t2i', 'multi_video'].includes(form.value.mode)) {
+                    } else if (form.value.mode === 'multi_t2i') {
                         if (multiLineCount.value === 0) return true;
                     } else {
                         if (form.value.mode !== 'fission' && !form.value.prompts.trim()) return true;
@@ -1559,7 +1565,7 @@
                 const allowedVideoTypes = ['video/mp4', 'video/quicktime'];
 
                 const isAllowedFile = (file) => {
-                    if (form.value.mode === 'video') {
+                    if (['video', 'multi_video'].includes(form.value.mode)) {
                         return allowedImageTypes.includes(file.type) || allowedVideoTypes.includes(file.type) || /\.(mp4|mov)$/i.test(file.name);
                     }
                     return allowedImageTypes.includes(file.type);
@@ -1578,7 +1584,7 @@
                 const handlePaste = (event) => {
                     const items = event.clipboardData && event.clipboardData.items;
                     if (!items) return;
-                    if (!['i2i', 'fission', 'convert', 'video', 'extract', 'ecommerce'].includes(form.value.mode)) return;
+                    if (!['i2i', 'fission', 'convert', 'video', 'multi_video', 'extract', 'ecommerce'].includes(form.value.mode)) return;
                     Array.from(items).forEach(item => {
                         if (item.kind === 'file') {
                             const file = item.getAsFile();
@@ -1729,8 +1735,49 @@
                     }
                 };
 
+                const buildVideoFormData = (prompt) => {
+                    const vp = form.value.videoParams;
+                    const fd = new FormData();
+                    fd.append('prompts', prompt);
+                    fd.append('negative_prompt', form.value.negative_prompt);
+                    fd.append('mode', 'video');
+                    fd.append('model_id', form.value.model_id);
+                    fd.append('batch_size', 1);
+                    fd.append('target_ratio', form.value.target_ratio);
+                    fd.append('video_size', vp.size);
+                    fd.append('video_duration', vp.duration);
+                    fd.append('video_shot_type', vp.shot_type);
+                    fd.append('video_audio', vp.audio);
+                    fd.append('video_watermark', vp.watermark);
+                    let tplName = form.value.selectedTemplate;
+                    if (tplName.includes(':')) tplName = tplName.split(':')[1];
+                    fd.append('template_name', tplName);
+                    form.value.files.forEach(file => fd.append('images', file));
+                    return fd;
+                };
+
                 const submitJob = async () => {
                     if (form.value.mode === 'ecommerce') { await startEcommerceFlow(); return; }
+
+                    // 多视频生成：按行拆分提示词，逐条调用视频生成接口
+                    if (form.value.mode === 'multi_video') {
+                        const lines = form.value.prompts.split('\n').map(l => l.trim()).filter(l => l);
+                        if (lines.length === 0) return;
+                        isSubmitting.value = true;
+                        try {
+                            for (const line of lines) {
+                                const fd = buildVideoFormData(line);
+                                const resp = await authFetch('/api/jobs', { method: 'POST', body: fd });
+                                const data = await resp.json();
+                                if (!resp.ok || !data.id) { alert('提交失败: ' + (data.error || "未知原因")); break; }
+                            }
+                            form.value.prompts = ''; form.value.negative_prompt = ''; removeAllFiles();
+                            currentTab.value = 'jobs'; fetchJobs();
+                        } catch (error) { alert('请求发生错误: ' + error.message); }
+                        finally { isSubmitting.value = false; }
+                        return;
+                    }
+
                     if (form.value.mode === 'convert' && !form.value.target_ratio) {
                         alert("请选择目标尺寸比例");
                         return;

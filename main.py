@@ -776,14 +776,20 @@ class WanVideoProvider:
                        size: str = "1280*720", duration: int = 5,
                        shot_type: str = "single", audio: bool = True,
                        watermark: bool = False) -> Tuple[List[dict], str]:
-        # 上传参考文件，获取 OSS 临时 URL
+        # 上传参考文件，获取 OSS 临时 URL（图片→reference_urls，视频→reference_video_urls）
         await aliyun_rate_limiter.wait(model_id)
         reference_urls = []
+        reference_video_urls = []
         for path in reference_paths:
             if path and os.path.exists(path):
-                # 修复点 3：传入对应的 model_id 获取专属于该模型的临时上传凭证
                 url = await upload_to_dashscope(path, model_id)
-                reference_urls.append(url)
+                ext = os.path.splitext(path)[1].lower()
+                if ext in (".mp4", ".mov", ".avi", ".webm"):
+                    reference_video_urls.append(url)
+                else:
+                    reference_urls.append(url)
+
+        print(f"[WAN] model={model_id} reference_urls={reference_urls} reference_video_urls={reference_video_urls}")
 
         payload: dict = {
             "model": model_id,
@@ -797,6 +803,8 @@ class WanVideoProvider:
         }
         if reference_urls:
             payload["input"]["reference_urls"] = reference_urls
+        if reference_video_urls:
+            payload["input"]["reference_video_urls"] = reference_video_urls
         # audio 参数仅 flash 模型支持
         if "flash" in model_id:
             payload["parameters"]["audio"] = audio
