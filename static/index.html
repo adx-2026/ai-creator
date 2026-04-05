@@ -199,10 +199,20 @@
                                         class="px-6 py-2 rounded-full font-semibold transition-all text-sm">
                                         <i class="fas fa-store-alt mr-2"></i>电商场景生图
                                     </button>
+                                    <button @click="form.mode = 'multi_t2i'"
+                                        :class="form.mode === 'multi_t2i' ? 'bg-white text-teal-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'"
+                                        class="px-6 py-2 rounded-full font-semibold transition-all text-sm">
+                                        <i class="fas fa-list-ul mr-2"></i>多图生成
+                                    </button>
                                     <button @click="form.mode = 'video'"
                                         :class="form.mode === 'video' ? 'bg-white text-rose-600 shadow-sm' : 'text-gray-600 hover:bg-gray-50'"
                                         class="px-6 py-2 rounded-full font-semibold transition-all text-sm">
                                         <i class="fas fa-film mr-2"></i>视频生成
+                                    </button>
+                                    <button @click="form.mode = 'multi_video'"
+                                        :class="form.mode === 'multi_video' ? 'bg-white text-rose-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'"
+                                        class="px-6 py-2 rounded-full font-semibold transition-all text-sm">
+                                        <i class="fas fa-photo-video mr-2"></i>多视频生成
                                     </button>
                                 </div>
 
@@ -241,7 +251,7 @@
                                     </p>
                                 </div>
 
-                                <div v-show="form.mode === 'video'"
+                                <div v-show="['video','multi_video'].includes(form.mode)"
                                     class="mb-6 bg-rose-50 border border-rose-100 p-5 rounded-xl space-y-4">
                                     <h4 class="text-sm font-bold text-rose-700 flex items-center">
                                         <i class="fas fa-sliders-h mr-2"></i>视频参数配置
@@ -332,7 +342,7 @@
                                     </div>
                                 </div>
 
-                                <div class="mb-8" v-show="form.mode !== 'convert' && form.mode !== 'video' && form.mode !== 'extract' && form.mode !== 'ecommerce'">
+                                <div class="mb-8" v-show="!['convert','video','multi_video','extract','ecommerce'].includes(form.mode)">
                                     <div class="flex items-center justify-between mb-2">
                                         <label class="block text-sm font-semibold text-gray-700">
                                             <i class="fas fa-bookmark text-indigo-500 mr-1"></i>快捷加载提示模板 <span
@@ -367,12 +377,11 @@
                                     </div>
                                 </div>
 
-                                <div v-show="['i2i', 'fission', 'convert', 'video', 'extract', 'ecommerce'].includes(form.mode)" class="mb-8">
+                                <div v-show="['i2i', 'fission', 'convert', 'video', 'multi_video', 'extract', 'ecommerce'].includes(form.mode)" class="mb-8">
                                     <label class="block text-sm font-semibold text-gray-700 mb-2">
                                         <span v-if="form.mode === 'convert'">上传需要重绘比例的图片</span>
-                                        <span v-else-if="form.mode === 'video'">参考素材上传 <span
-                                                class="text-xs font-normal text-rose-500 ml-1">(可选，最多 5 个文件，图片 ≤ 5 张，视频
-                                                ≤ 3 段)</span></span>
+                                        <span v-else-if="['video','multi_video'].includes(form.mode)">参考素材上传 <span
+                                                class="text-xs font-normal text-rose-500 ml-1">(可选，所有视频共享同一参考图)</span></span>
                                         <span v-else-if="form.mode === 'extract'">产品图片上传 <span
                                                 class="text-xs font-normal text-indigo-400 ml-1">(AI 将自动识别图案并生成变体，每张图独立处理)</span></span>
                                         <span v-else-if="form.mode === 'ecommerce'">产品图片上传 <span
@@ -503,25 +512,32 @@
                                     <label
                                         class="flex justify-between items-center text-sm font-semibold text-gray-700 mb-2">
                                         <span>
-                                            <span v-if="form.mode === 'video'">视频描述提示词 <span
+                                            <span v-if="['video','multi_video'].includes(form.mode)">视频描述提示词 <span
                                                     class="text-xs font-bold text-red-500 ml-1">(必填)</span></span>
+                                            <span v-else-if="form.mode === 'multi_t2i'">提示词列表 <span class="text-xs font-normal text-teal-500 ml-1">(每行一个任务)</span></span>
                                             <span v-else>创作提示词 <span class="text-xs font-normal text-gray-400 ml-1">(正向
                                                     Prompt<span
                                                         v-if="form.mode==='fission'">，裂变模式下选填</span>)</span></span>
                                         </span>
+                                        <span v-if="['multi_t2i','multi_video'].includes(form.mode)"
+                                            class="text-xs font-semibold px-2 py-0.5 rounded-full"
+                                            :class="form.mode === 'multi_t2i' ? 'bg-teal-50 text-teal-600 border border-teal-200' : 'bg-rose-50 text-rose-600 border border-rose-200'">
+                                            {{ multiLineCount }} 个任务
+                                        </span>
                                     </label>
-                                    <textarea v-model="form.prompts" rows="6"
-                                        :class="form.mode === 'video' ? 'focus:ring-rose-500 focus:border-rose-500' : 'focus:ring-indigo-500 focus:border-indigo-500'"
-                                        class="shadow-sm block w-full sm:text-sm border-gray-300 rounded-xl p-4 bg-gray-50 text-gray-800 transition-colors"
-                                        :placeholder="form.mode === 'video' ? '例如：character1 站在窗边，微笑着望向远处，阳光洒在她的脸上。（用 character1、character2... 引用上传的参考角色）' : '例如：一只戴着墨镜的赛博朋克猫咪，背景是未来感十足的高楼大厦，画面需要有强烈的霓虹灯光效，使用水彩画风格呈现细节。'"></textarea>
-                                    <p v-if="form.mode === 'video'" class="text-xs text-gray-400 mt-1.5">
+                                    <textarea v-model="form.prompts"
+                                        :rows="['multi_t2i','multi_video'].includes(form.mode) ? 10 : 6"
+                                        :class="['video','multi_video'].includes(form.mode) ? 'focus:ring-rose-500 focus:border-rose-500' : form.mode === 'multi_t2i' ? 'focus:ring-teal-500 focus:border-teal-500' : 'focus:ring-indigo-500 focus:border-indigo-500'"
+                                        class="shadow-sm block w-full sm:text-sm border-gray-300 rounded-xl p-4 bg-gray-50 text-gray-800 transition-colors font-mono"
+                                        :placeholder="form.mode === 'multi_t2i' ? '每行输入一个提示词，每行将独立生成一张图片，例如：\n一只戴墨镜的赛博朋克猫咪\n未来感城市夜景，霓虹灯光\n水墨风格山水画' : ['video','multi_video'].includes(form.mode) ? (form.mode === 'multi_video' ? '每行输入一段视频描述，每行将独立生成一个视频，例如：\n海浪轻拍礁石，落日余晖\n城市夜晚车流延时摄影' : '例如：character1 站在窗边，微笑着望向远处，阳光洒在她的脸上。（用 character1、character2... 引用上传的参考角色）') : '例如：一只戴着墨镜的赛博朋克猫咪，背景是未来感十足的高楼大厦，画面需要有强烈的霓虹灯光效，使用水彩画风格呈现细节。'"></textarea>
+                                    <p v-if="['video','multi_video'].includes(form.mode)" class="text-xs text-gray-400 mt-1.5">
                                         <i class="fas fa-info-circle mr-1"></i>通过 <code
                                             class="bg-gray-100 px-1 rounded">character1</code>、<code
                                             class="bg-gray-100 px-1 rounded">character2</code> 等标识引用参考素材中的角色（按上传顺序对应）。
                                     </p>
                                 </div>
 
-                                <div class="mb-8" v-show="form.mode !== 'convert' && form.mode !== 'video' && form.mode !== 'extract' && form.mode !== 'ecommerce'">
+                                <div class="mb-8" v-show="!['convert','video','multi_video','extract','ecommerce'].includes(form.mode)">
                                     <label class="block text-sm font-semibold text-gray-700 mb-2">
                                         反向提示词 <span class="text-xs font-normal text-gray-400 ml-1">(Negative Prompt:
                                             不希望出现的元素)</span>
@@ -551,10 +567,14 @@
                                         </div>
                                     </div>
                                     <button @click="submitJob" :disabled="isSubmitDisabled"
-                                        :class="form.mode === 'video' ? 'bg-rose-600 hover:bg-rose-700 focus:ring-rose-500' : form.mode === 'ecommerce' ? 'bg-purple-600 hover:bg-purple-700 focus:ring-purple-500' : 'bg-indigo-600 hover:bg-indigo-700 focus:ring-indigo-500'"
+                                        :class="['video','multi_video'].includes(form.mode) ? 'bg-rose-600 hover:bg-rose-700 focus:ring-rose-500' : form.mode === 'ecommerce' ? 'bg-purple-600 hover:bg-purple-700 focus:ring-purple-500' : form.mode === 'multi_t2i' ? 'bg-teal-600 hover:bg-teal-700 focus:ring-teal-500' : 'bg-indigo-600 hover:bg-indigo-700 focus:ring-indigo-500'"
                                         class="inline-flex items-center px-8 py-3.5 border border-transparent text-base font-bold rounded-xl shadow-lg text-white focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:-translate-y-0.5">
                                         <i class="fas fa-paper-plane mr-2"
-                                            v-if="!isSubmitting && !['convert','video','extract','ecommerce'].includes(form.mode)"></i>
+                                            v-if="!isSubmitting && !['convert','video','multi_video','extract','ecommerce','multi_t2i'].includes(form.mode)"></i>
+                                        <i class="fas fa-list-ul mr-2"
+                                            v-if="!isSubmitting && form.mode === 'multi_t2i'"></i>
+                                        <i class="fas fa-photo-video mr-2"
+                                            v-if="!isSubmitting && form.mode === 'multi_video'"></i>
                                         <i class="fas fa-crop-alt mr-2"
                                             v-if="!isSubmitting && form.mode === 'convert'"></i>
                                         <i class="fas fa-magic mr-2"
@@ -563,7 +583,7 @@
                                             v-if="!isSubmitting && form.mode === 'ecommerce'"></i>
                                         <i class="fas fa-film mr-2" v-if="!isSubmitting && form.mode === 'video'"></i>
                                         <i class="fas fa-spinner fa-spin mr-2 text-lg" v-if="isSubmitting"></i>
-                                        {{ isSubmitting ? (form.mode === 'ecommerce' ? 'AI 分析中...' : '处理中...') : (form.mode === 'convert' ? '提交 AI 重绘' : form.mode === 'extract' ? '提交图案提取' : form.mode === 'video' ? '提交视频生成' : form.mode === 'ecommerce' ? '开始电商生图' : '提交生成') }}
+                                        {{ isSubmitting ? (form.mode === 'ecommerce' ? 'AI 分析中...' : '处理中...') : (form.mode === 'convert' ? '提交 AI 重绘' : form.mode === 'extract' ? '提交图案提取' : ['video','multi_video'].includes(form.mode) ? '提交视频生成' : form.mode === 'ecommerce' ? '开始电商生图' : form.mode === 'multi_t2i' ? `提交 ${multiLineCount} 张生成` : '提交生成') }}
                                     </button>
                                 </div>
                             </div>
@@ -607,10 +627,10 @@
                                     <div class="h-4 w-px bg-gray-300"></div>
                                     <span class="text-sm font-bold text-gray-700 flex items-center">
                                         <span class="bg-white p-1 rounded inline-flex shadow-sm mr-2">
-                                            <i :class="job.mode === 't2i' ? 'fas fa-font text-indigo-500' : job.mode === 'i2i' ? 'fas fa-images text-purple-500' : job.mode === 'convert' ? 'fas fa-crop-alt text-blue-500' : job.mode === 'video' ? 'fas fa-film text-rose-500' : job.mode === 'extract' ? 'fas fa-magic text-indigo-500' : job.mode === 'ecommerce' ? 'fas fa-store-alt text-purple-500' : 'fas fa-sitemap text-emerald-500'"
+                                            <i :class="job.mode === 't2i' ? 'fas fa-font text-indigo-500' : job.mode === 'i2i' ? 'fas fa-images text-purple-500' : job.mode === 'convert' ? 'fas fa-crop-alt text-blue-500' : job.mode === 'video' ? 'fas fa-film text-rose-500' : job.mode === 'multi_video' ? 'fas fa-photo-video text-rose-600' : job.mode === 'multi_t2i' ? 'fas fa-list-ul text-teal-500' : job.mode === 'extract' ? 'fas fa-magic text-indigo-500' : job.mode === 'ecommerce' ? 'fas fa-store-alt text-purple-500' : 'fas fa-sitemap text-emerald-500'"
                                                 class="w-4 text-center"></i>
                                         </span>
-                                        {{ job.mode === 't2i' ? '文生图任务' : job.mode === 'i2i' ? '图生图任务' : job.mode === 'convert' ? 'AI尺寸重绘' : job.mode === 'video' ? '视频生成任务' : job.mode === 'extract' ? '图案提取生图' : job.mode === 'ecommerce' ? '电商场景生图' : '图片裂变任务' }}
+                                        {{ job.mode === 't2i' ? '文生图任务' : job.mode === 'i2i' ? '图生图任务' : job.mode === 'convert' ? 'AI尺寸重绘' : job.mode === 'video' ? '视频生成任务' : job.mode === 'multi_video' ? '多视频生成' : job.mode === 'multi_t2i' ? '多图生成任务' : job.mode === 'extract' ? '图案提取生图' : job.mode === 'ecommerce' ? '电商场景生图' : '图片裂变任务' }}
                                     </span>
                                     <span class="text-xs text-gray-500 ml-2" v-if="job.model_id">
                                         [<i class="fas fa-microchip mr-1"></i>{{ job.model_id }}]
@@ -1273,6 +1293,11 @@
 
                 const isAliyunModel = (id) => id && (id.startsWith('qwen') || id.startsWith('wan'));
 
+                // 多行模式：统计非空行数
+                const multiLineCount = computed(() =>
+                    form.value.prompts.split('\n').filter(l => l.trim()).length || 0
+                );
+
                 const estimateCredits = () => {
                     const modelId = form.value.model_id;
                     if (!isAliyunModel(modelId)) return 0;
@@ -1287,6 +1312,13 @@
                         const vlCost = (_VL_EST_INPUT / 1e6 * _VL_PRICE.input + _VL_EST_OUTPUT / 1e6 * _VL_PRICE.output) * _CREDITS_PER_YUAN;
                         const imgCost = (_IMAGE_PRICE[modelId] ?? 0.5) * _CREDITS_PER_YUAN;
                         return Math.round(imgCount * (vlCost + batchSize * imgCost) * 10000) / 10000;
+                    }
+                    if (mode === 'multi_t2i') {
+                        return Math.round(calculateTotalTasks() * (_IMAGE_PRICE[modelId] ?? 0.5) * _CREDITS_PER_YUAN * 10000) / 10000;
+                    }
+                    if (mode === 'multi_video') {
+                        const duration = form.value.videoParams.duration || 5;
+                        return Math.round(calculateTotalTasks() * (_VIDEO_PRICE[modelId] ?? 0.5) * _CREDITS_PER_YUAN * duration * 10000) / 10000;
                     }
                     if (mode === 'ecommerce') {
                         const imgCount = form.value.files.length || 1;
@@ -1339,12 +1371,13 @@
                 };
 
                 const filteredModels = (group) => {
-                    const isVideoMode = form.value.mode === 'video';
+                    const isVideoMode = ['video', 'multi_video'].includes(form.value.mode);
                     return group.models.filter(m => isVideoMode ? m.type === 'video' : m.type !== 'video');
                 };
 
                 const calculateTotalTasks = () => {
                     if (form.value.mode === 'video') return 1;
+                    if (['multi_t2i', 'multi_video'].includes(form.value.mode)) return multiLineCount.value || 1;
                     if (form.value.mode === 'extract') return form.value.files.length > 0 ? form.value.files.length : 1;
                     if (form.value.mode === 'ecommerce') return (form.value.files.length || 1) * (ecSettings.value.scene_count || 3);
                     let fileCount = ['i2i', 'fission', 'convert'].includes(form.value.mode) && form.value.files.length > 0 ? form.value.files.length : 1;
@@ -1362,6 +1395,8 @@
                         if (form.value.files.length === 0) return true;
                     } else if (form.value.mode === 'ecommerce') {
                         if (form.value.files.length === 0) return true;
+                    } else if (['multi_t2i', 'multi_video'].includes(form.value.mode)) {
+                        if (multiLineCount.value === 0) return true;
                     } else {
                         if (form.value.mode !== 'fission' && !form.value.prompts.trim()) return true;
                         if (['i2i', 'fission'].includes(form.value.mode) && form.value.files.length === 0) return true;
@@ -1824,7 +1859,7 @@
                     } catch (error) { alert("下载文件时遇到错误！"); }
                 };
 
-                const MODE_LABELS = { t2i: '文本生图', i2i: '图像生图', fission: '图片裂变', convert: 'AI尺寸重绘', video: '视频生成', extract: '图案提取生图', ecommerce: '电商场景生图' };
+                const MODE_LABELS = { t2i: '文本生图', i2i: '图像生图', fission: '图片裂变', convert: 'AI尺寸重绘', video: '视频生成', multi_t2i: '多图生成', multi_video: '多视频生成', extract: '图案提取生图', ecommerce: '电商场景生图' };
                 const getModeLabel = (mode) => MODE_LABELS[mode] || mode;
 
                 const getSubtaskResult = (job, subtaskId) => (job.results || []).find(r => r.task_id === subtaskId) || null;
@@ -1870,7 +1905,7 @@
                     removeFile, removeAllFiles, getObjectURL, submitJob, fetchJobs, deleteJob, retryFailedTasks, retryTask, hasFailedResults, handleTemplateSelect,
                     openSaveModal, openSaveModalFromResult, saveTemplate, editTemplate, deleteTemplate, handleLogin, handleLogout,
                     formatDate, renderMarkdown, downloadImage, getToken, hasImages, downloadAll,
-                    isVideoFile, filteredModels, estimateCredits, isAliyunModel,
+                    isVideoFile, filteredModels, estimateCredits, isAliyunModel, multiLineCount,
                     jobDetailModal, openJobDetail, getModeLabel, getSubtaskResult,
                     ecFlowState, ecStep1Data, ecStep2Data, ecSettings,
                     cancelEcommerceFlow, proceedToStep2, proceedToSubmit, backToStep1, saveEcSettings

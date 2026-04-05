@@ -216,9 +216,9 @@ def estimate_job_credits(model_id: str, mode: str, subtasks: List[Dict], video_p
     """估算整个任务的积分消耗（任务提交前调用）"""
     if not is_aliyun_model(model_id):
         return 0.0
-    if mode == "video":
+    if mode in ("video", "multi_video"):
         duration = int((video_params or {}).get("duration", 5))
-        return round(get_video_credit_per_second(model_id) * duration, 4)
+        return round(get_video_credit_per_second(model_id) * duration * len(subtasks), 4)
     if mode == "extract":
         vl_model = os.getenv("QWEN_VL_MODEL", "qwen3-vl-plus")
         vl_credit = get_vl_credit_per_call(vl_model)
@@ -317,6 +317,11 @@ def make_subtask(prompt: str, source_img: Optional[str] = None) -> Dict[str, Any
 def build_subtasks(mode: str, prompts: List[str], source_image_paths: Optional[List[str]], batch_size: int) -> List[Dict[str, Any]]:
     if mode == "video":
         return [make_subtask(prompts[0] if prompts else "", source_image_paths[0] if source_image_paths else None)]
+
+    # multi_video：每行提示词对应一个视频子任务，共享同一张参考图（若有）
+    if mode == "multi_video":
+        ref = source_image_paths[0] if source_image_paths else None
+        return [make_subtask(p, ref) for p in prompts if p.strip()]
 
     # ecommerce 模式：prompts 与 source_image_paths 一一对应，逐对创建子任务
     if mode == "ecommerce":
@@ -1034,47 +1039,61 @@ async def process_queue():
             continue
 
         # ==========================================
-        # 视频生成模式 (万相 WAN)
+        # 视频生成模式 (万相 WAN) — 单视频 & 多视频顺序执行
         # ==========================================
-        if job["mode"] == "video":
-            subtask = next((t for t in job.get("subtasks", []) if t.get("status") == "pending"), None)
-            if not subtask:
+        if job["mode"] in ("video", "multi_video"):
+            pending_tasks = [t for t in job.get("subtasks", []) if t.get("status") == "pending"]
+            if not pending_tasks:
                 job["status"] = "completed"
                 job["eta"] = 0
                 job_queue.sync_user_jobs(user)
                 job_queue.queue.task_done()
                 continue
-            prompt = subtask.get("prompt", "")
-            dl_base_name = re.sub(r'[\\/*?:"<>|]', "", f"video_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
             vp = job.get("video_params", {})
-            try:
-                subtask["attempts"] = subtask.get("attempts", 0) + 1
-                wan_provider = WanVideoProvider()
-                videos, _ = await run_with_retries(
-                    lambda: wan_provider.generate(
+            wan_provider = WanVideoProvider()
+            total_video = len(pending_tasks)
+            for idx, subtask in enumerate(pending_tasks):
+                prompt = subtask.get("prompt", "")
+                dl_base_name = re.sub(r'[\\/*?:"<>|]', "", f"video_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{idx+1}")
+                try:
+                    subtask["attempts"] = subtask.get("attempts", 0) + 1
+                    videos, _ = await run_with_retries(
+                        lambda p=prompt, st=subtask, b=dl_base_name: wan_provider.generate(
+                            model_id=model_id,
+                            prompt=p,
+                            reference_paths=[st["source_img"]] if st.get("source_img") else [],
+                            user_dir=user_dir,
+                            dl_base_name=b,
+                            user=user,
+                            size=vp.get("size", "1280*720"),
+                            duration=int(vp.get("duration", 5)),
+                            shot_type=vp.get("shot_type", "single"),
+                            audio=bool(vp.get("audio", True)),
+                            watermark=bool(vp.get("watermark", False)),
+                        ),
                         model_id=model_id,
-                        prompt=prompt,
-                        reference_paths=[subtask["source_img"]] if subtask.get("source_img") else [],
-                        user_dir=user_dir,
-                        dl_base_name=dl_base_name,
-                        user=user,
-                        size=vp.get("size", "1280*720"),
-                        duration=int(vp.get("duration", 5)),
-                        shot_type=vp.get("shot_type", "single"),
-                        audio=bool(vp.get("audio", True)),
-                        watermark=bool(vp.get("watermark", False)),
-                    ),
-                    model_id=model_id,
-                )
-                subtask["status"] = "success"
-                duration = int(vp.get("duration", 5))
-                credit_cost = round(get_video_credit_per_second(model_id) * duration, 4)
-                await deduct_credits(user, credit_cost)
-                upsert_task_result(job, subtask, {"prompt": prompt, "source_img": os.path.basename(subtask["source_img"]).split('_', 1)[-1] if subtask.get("source_img") else None, "videos": videos, "images": [], "status": "success", "attempts": subtask["attempts"], "credit_cost": credit_cost})
-            except Exception as e:
-                subtask["status"] = "error"
-                upsert_task_result(job, subtask, {"prompt": prompt, "source_img": os.path.basename(subtask["source_img"]).split('_', 1)[-1] if subtask.get("source_img") else None, "error": str(e), "status": "error", "attempts": subtask["attempts"]})
-            refresh_job_progress(job)
+                    )
+                    subtask["status"] = "success"
+                    duration_sec = int(vp.get("duration", 5))
+                    credit_cost = round(get_video_credit_per_second(model_id) * duration_sec, 4)
+                    await deduct_credits(user, credit_cost)
+                    upsert_task_result(job, subtask, {
+                        "prompt": prompt,
+                        "source_img": os.path.basename(subtask["source_img"]).split('_', 1)[-1] if subtask.get("source_img") else None,
+                        "videos": videos, "images": [], "status": "success",
+                        "attempts": subtask["attempts"], "credit_cost": credit_cost,
+                    })
+                except Exception as e:
+                    subtask["status"] = "error"
+                    upsert_task_result(job, subtask, {
+                        "prompt": prompt,
+                        "source_img": os.path.basename(subtask["source_img"]).split('_', 1)[-1] if subtask.get("source_img") else None,
+                        "error": str(e), "status": "error", "attempts": subtask["attempts"],
+                    })
+                refresh_job_progress(job)
+                remaining = total_video - (idx + 1)
+                job["eta"] = remaining * 300  # 粗略预估每视频约 5 分钟
+                job_queue.sync_user_jobs(user)
             job["status"] = "completed"
             job["eta"] = 0
             job_queue.sync_user_jobs(user)
@@ -1365,6 +1384,12 @@ async def create_job(
         prompt_str = "保持原图主体结构和风格不变，将画面自然延展或重绘以适应设定的新比例尺寸，边缘过渡自然。"
     elif mode == "extract":
         prompt_str = ""  # prompt 由 VL 模型自动生成，前端无需填写
+    elif mode == "multi_t2i":
+        if not prompt_str:
+            return {"error": "请至少输入一行提示词"}
+    elif mode == "multi_video":
+        if not prompt_str:
+            return {"error": "视频生成需要填写提示词"}
     elif mode != "video" and not prompt_str:
         return {"error": "No prompt provided"}
     elif mode == "video" and not prompt_str:
@@ -1382,14 +1407,20 @@ async def create_job(
                 source_paths.append(path)
 
     video_params = None
-    if mode == "video":
+    if mode in ("video", "multi_video"):
         video_params = {
             "size": video_size, "duration": video_duration,
             "shot_type": video_shot_type, "audio": video_audio, "watermark": video_watermark
         }
 
+    # multi 模式：按换行拆分为多个子任务
+    if mode in ("multi_t2i", "multi_video"):
+        prompts_list = [p.strip() for p in prompt_str.split('\n') if p.strip()]
+    else:
+        prompts_list = [prompt_str]
+
     job = await job_queue.add_job(
-        curr['username'], mode, [prompt_str], source_paths,
+        curr['username'], mode, prompts_list, source_paths,
         template_name, model_id, negative_prompt, batch_size, target_ratio,
         video_params=video_params
     )
