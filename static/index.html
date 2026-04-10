@@ -199,6 +199,11 @@
                                         class="px-6 py-2 rounded-full font-semibold transition-all text-sm">
                                         <i class="fas fa-store-alt mr-2"></i>电商场景生图
                                     </button>
+                                    <button @click="form.mode = 'threed'"
+                                        :class="form.mode === 'threed' ? 'bg-white text-cyan-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'"
+                                        class="px-6 py-2 rounded-full font-semibold transition-all text-sm">
+                                        <i class="fas fa-cube mr-2"></i>3D图片转换
+                                    </button>
                                     <button @click="form.mode = 'multi_t2i'"
                                         :class="form.mode === 'multi_t2i' ? 'bg-white text-teal-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'"
                                         class="px-6 py-2 rounded-full font-semibold transition-all text-sm">
@@ -386,7 +391,7 @@
                                     </div>
                                 </div>
 
-                                <div v-show="['i2i', 'fission', 'convert', 'video', 'multi_video', 'extract', 'ecommerce'].includes(form.mode)" class="mb-8">
+                                <div v-show="['i2i', 'fission', 'convert', 'video', 'multi_video', 'extract', 'ecommerce', 'threed'].includes(form.mode)" class="mb-8">
                                     <label class="block text-sm font-semibold text-gray-700 mb-2">
                                         <span v-if="form.mode === 'convert'">上传需要重绘比例的图片</span>
                                         <span v-else-if="['video','multi_video'].includes(form.mode)">参考素材上传 <span
@@ -398,12 +403,14 @@
                                                 class="text-xs font-normal text-indigo-400 ml-1">(AI 将自动识别图案并生成变体，每张图独立处理)</span></span>
                                         <span v-else-if="form.mode === 'ecommerce'">产品图片上传 <span
                                                 class="text-xs font-normal text-purple-500 ml-1">(AI 将分析产品并生成多个电商场景展示图)</span></span>
+                                        <span v-else-if="form.mode === 'threed'">图片上传 <span
+                                                class="text-xs font-normal text-cyan-500 ml-1">(AI 将理解图案内容，生成对应的3D刺绣效果图)</span></span>
                                         <span v-else>参考图片上传 <span
                                                 class="text-xs font-normal text-gray-400 ml-1">(图生图每张独立生成，裂变模式单图扩增多张)</span></span>
                                     </label>
                                     <div @dragover.prevent="isDragging = true" @dragleave.prevent="isDragging = false"
                                         @drop.prevent="onDrop"
-                                        :class="{'border-rose-400 bg-rose-50 ring-4 ring-rose-50': isDragging && ['video','multi_video'].includes(form.mode), 'border-purple-500 bg-purple-50 ring-4 ring-purple-50': isDragging && form.mode === 'ecommerce', 'border-indigo-500 bg-indigo-50 ring-4 ring-indigo-50': isDragging && !['video','multi_video'].includes(form.mode) && form.mode !== 'ecommerce', 'border-purple-200 bg-purple-50/30': !isDragging && form.mode === 'ecommerce', 'border-indigo-200 bg-indigo-50/30': !isDragging && form.mode === 'extract', 'border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-gray-400': !isDragging && form.mode !== 'extract' && form.mode !== 'ecommerce'}"
+                                        :class="{'border-rose-400 bg-rose-50 ring-4 ring-rose-50': isDragging && ['video','multi_video'].includes(form.mode), 'border-purple-500 bg-purple-50 ring-4 ring-purple-50': isDragging && form.mode === 'ecommerce', 'border-cyan-500 bg-cyan-50 ring-4 ring-cyan-50': isDragging && form.mode === 'threed', 'border-indigo-500 bg-indigo-50 ring-4 ring-indigo-50': isDragging && !['video','multi_video'].includes(form.mode) && form.mode !== 'ecommerce' && form.mode !== 'threed', 'border-purple-200 bg-purple-50/30': !isDragging && form.mode === 'ecommerce', 'border-cyan-200 bg-cyan-50/30': !isDragging && form.mode === 'threed', 'border-indigo-200 bg-indigo-50/30': !isDragging && form.mode === 'extract', 'border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-gray-400': !isDragging && form.mode !== 'extract' && form.mode !== 'ecommerce' && form.mode !== 'threed'}"
                                         class="mt-1 flex flex-col justify-center items-center px-6 py-12 border-2 border-dashed rounded-xl transition-all cursor-pointer min-h-[200px]"
                                         @click="triggerFileInput" tabindex="0">
                                         <div class="space-y-3 text-center pointer-events-none">
@@ -520,7 +527,27 @@
                                     </div>
                                 </div>
 
-                                <div class="mb-8" v-show="form.mode !== 'convert' && form.mode !== 'extract' && form.mode !== 'ecommerce'">
+                                <!-- 3D图片转换设置 -->
+                                <div v-show="form.mode === 'threed'" class="mb-6 bg-cyan-50 border border-cyan-100 rounded-xl p-4">
+                                    <label class="font-semibold text-sm text-cyan-800 mb-3 block">
+                                        <i class="fas fa-cube mr-1.5 text-cyan-500"></i>3D刺绣转换设置
+                                    </label>
+                                    <div class="flex items-center mb-2.5">
+                                        <input type="checkbox" id="td-oneshot-cb" v-model="tdSettings.one_shot"
+                                            class="w-4 h-4 text-cyan-600 border-gray-300 rounded focus:ring-cyan-500">
+                                        <label for="td-oneshot-cb" class="ml-2 text-sm text-cyan-700 font-medium">一步到位（全自动，跳过描述确认）</label>
+                                    </div>
+                                    <div v-if="!tdSettings.one_shot" class="border-t border-cyan-100 pt-3">
+                                        <div class="flex items-center">
+                                            <input type="checkbox" id="td-skip-step1-cb" v-model="tdSettings.skip_step1_review"
+                                                class="w-4 h-4 text-cyan-600 border-gray-300 rounded focus:ring-cyan-500">
+                                            <label for="td-skip-step1-cb" class="ml-2 text-xs text-cyan-600">跳过图案描述确认步骤</label>
+                                        </div>
+                                    </div>
+                                    <p class="text-xs text-cyan-500 mt-3"><i class="fas fa-info-circle mr-1"></i>每张上传的图片将生成一张对应的3D刺绣效果图</p>
+                                </div>
+
+                                <div class="mb-8" v-show="form.mode !== 'convert' && form.mode !== 'extract' && form.mode !== 'ecommerce' && form.mode !== 'threed'">
                                     <label
                                         class="flex justify-between items-center text-sm font-semibold text-gray-700 mb-2">
                                         <span>
@@ -1011,6 +1038,21 @@
             </div>
         </div>
 
+        <!-- ===== 3D图片转换：步骤加载遮罩 ===== -->
+        <div v-if="['td_step1_loading','td_job_submitting'].includes(tdFlowState)"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/70 backdrop-blur-sm">
+            <div class="bg-white rounded-2xl shadow-2xl p-8 flex flex-col items-center gap-4 min-w-[260px]">
+                <div class="w-12 h-12 border-4 border-cyan-200 border-t-cyan-600 rounded-full animate-spin"></div>
+                <div class="text-center">
+                    <p class="font-semibold text-gray-800">
+                        <span v-if="tdFlowState === 'td_step1_loading'">AI 正在理解图片图案...</span>
+                        <span v-else>正在提交生成任务...</span>
+                    </p>
+                    <p class="text-xs text-gray-400 mt-1">请稍候，勿关闭页面</p>
+                </div>
+            </div>
+        </div>
+
         <!-- ===== 电商场景：步骤 1 产品描述 Review Modal ===== -->
         <div v-if="ecFlowState === 'step1_review'"
             class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/70 backdrop-blur-sm p-4">
@@ -1140,6 +1182,74 @@
                                 <i class="fas fa-magic mr-1.5"></i>提交生成任务
                             </button>
                         </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== 3D图片转换：步骤 1 图案描述 Review Modal ===== -->
+        <div v-if="tdFlowState === 'td_step1_review'"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/70 backdrop-blur-sm p-4">
+            <div class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-2xl flex flex-col" style="max-height:88vh">
+                <div class="flex justify-between items-center mb-4 border-b border-gray-100 pb-4">
+                    <h3 class="text-lg font-bold text-gray-900 flex items-center gap-2">
+                        <span class="bg-cyan-100 text-cyan-700 text-xs font-bold px-2.5 py-0.5 rounded-full">步骤 1 / 2</span>
+                        AI 图案分析结果确认
+                    </h3>
+                    <button @click="cancelThreedFlow" class="text-gray-400 hover:text-gray-600 w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <p class="text-xs text-gray-500 mb-4">AI 已分析您的图片内容，请确认或修改图案描述（英文效果更佳），描述将用于生成对应的3D刺绣效果图。</p>
+                <div class="overflow-y-auto custom-scrollbar flex-1 space-y-4 pr-1">
+                    <div v-for="(item, idx) in tdStep1Data" :key="idx"
+                        class="border border-gray-200 rounded-xl p-4">
+                        <div class="flex items-start gap-3 mb-3">
+                            <img :src="item.display_url + '?token=' + getToken()"
+                                class="w-16 h-16 object-cover rounded-lg border border-gray-200 flex-shrink-0 bg-gray-100"
+                                :alt="item.image_name" @error="$event.target.style.display='none'">
+                            <div class="flex-1 min-w-0">
+                                <p class="text-sm font-semibold text-gray-700 truncate">{{ item.image_name }}</p>
+                                <p v-if="item.error" class="text-xs text-red-500 mt-1"><i class="fas fa-exclamation-circle mr-1"></i>{{ item.error }}</p>
+                                <p v-else class="text-xs text-green-600 mt-1"><i class="fas fa-check-circle mr-1"></i>图案分析完成</p>
+                            </div>
+                        </div>
+                        <label class="text-xs font-semibold text-gray-600 mb-1.5 block">图案描述（可编辑）</label>
+                        <textarea v-model="item.description" rows="4"
+                            class="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-cyan-500 focus:border-cyan-500 bg-gray-50 resize-none"
+                            :placeholder="item.error ? '描述提取失败，请手动输入图案描述（英文）...' : ''"></textarea>
+                        <div class="mt-2 p-2.5 bg-cyan-50 rounded-lg border border-cyan-100">
+                            <p class="text-[11px] text-cyan-600 font-medium"><i class="fas fa-cube mr-1"></i>生成提示词预览：</p>
+                            <p class="text-[11px] text-cyan-700 mt-1 line-clamp-2">A highly detailed realistic embroidery of {{ item.description || '...' }}, stitched with colorful threads...</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between flex-wrap gap-3">
+                    <div class="flex items-center gap-4">
+                        <div class="flex items-center">
+                            <input type="checkbox" id="td-save-skip-step1" v-model="tdSettings.skip_step1_review"
+                                class="w-4 h-4 text-cyan-600 border-gray-300 rounded">
+                            <label for="td-save-skip-step1" class="ml-2 text-xs text-gray-500">以后跳过此步骤</label>
+                        </div>
+                        <div class="flex items-center">
+                            <label class="text-xs font-semibold text-gray-600 mr-2">输出比例</label>
+                            <select v-model="form.target_ratio"
+                                class="border border-gray-300 rounded-lg px-3 py-1 text-sm focus:ring-cyan-500 focus:border-cyan-500">
+                                <option value="1:1">1:1 方形</option>
+                                <option value="3:4">3:4 竖版</option>
+                                <option value="4:3">4:3 横版</option>
+                                <option value="9:16">9:16 手机版</option>
+                                <option value="16:9">16:9 横屏</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="flex gap-3">
+                        <button @click="cancelThreedFlow"
+                            class="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-xl text-sm hover:bg-gray-50 transition-colors">取消</button>
+                        <button @click="proceedToThreedSubmit"
+                            class="px-5 py-2 bg-cyan-600 text-white rounded-xl text-sm hover:bg-cyan-700 shadow-sm transition-colors font-semibold">
+                            <i class="fas fa-magic mr-1.5"></i>提交生成任务
+                        </button>
                     </div>
                 </div>
             </div>
@@ -1361,6 +1471,12 @@
                         const imgCost = (_IMAGE_PRICE[modelId] ?? 0.5) * _CREDITS_PER_YUAN;
                         return Math.round(imgCount * (vlCost + textCost + sceneCount * imgCost) * 10000) / 10000;
                     }
+                    if (mode === 'threed') {
+                        const imgCount = form.value.files.length || 1;
+                        const vlCost = (_VL_EST_INPUT / 1e6 * _VL_PRICE.input + _VL_EST_OUTPUT / 1e6 * _VL_PRICE.output) * _CREDITS_PER_YUAN;
+                        const imgCost = (_IMAGE_PRICE[modelId] ?? 0.5) * _CREDITS_PER_YUAN;
+                        return Math.round(imgCount * (vlCost + imgCost) * 10000) / 10000;
+                    }
                     return Math.round(calculateTotalTasks() * (_IMAGE_PRICE[modelId] ?? 0.5) * _CREDITS_PER_YUAN * 10000) / 10000;
                 };
 
@@ -1391,6 +1507,11 @@
                 const ecStep1Data = ref([]);
                 const ecStep2Data = ref([]);
                 const ecSettings = ref({ skip_step1_review: false, skip_step2_review: false, one_shot: false, scene_count: 3 });
+
+                // ── 3D图片转换状态 ──
+                const tdFlowState = ref('idle'); // idle | td_step1_loading | td_step1_review | td_job_submitting
+                const tdStep1Data = ref([]);
+                const tdSettings = ref({ skip_step1_review: false, one_shot: false });
 
                 const showSaveTemplateModal = ref(false);
                 const showTemplateManagerModal = ref(false);
@@ -1444,6 +1565,7 @@
                     if (['multi_t2i', 'multi_video'].includes(form.value.mode)) return multiLineCount.value || 1;
                     if (form.value.mode === 'extract') return form.value.files.length > 0 ? form.value.files.length : 1;
                     if (form.value.mode === 'ecommerce') return (form.value.files.length || 1) * (ecSettings.value.scene_count || 3);
+                    if (form.value.mode === 'threed') return form.value.files.length || 1;
                     let fileCount = ['i2i', 'fission', 'convert'].includes(form.value.mode) && form.value.files.length > 0 ? form.value.files.length : 1;
                     let bSize = form.value.mode === 'fission' ? form.value.batch_size : 1;
                     let ratioMul = form.value.mode === 'convert' ? Math.max(form.value.target_ratios.length, 1) : 1;
@@ -1451,7 +1573,7 @@
                 };
 
                 const isSubmitDisabled = computed(() => {
-                    if (isSubmitting.value || ecFlowState.value !== 'idle') return true;
+                    if (isSubmitting.value || ecFlowState.value !== 'idle' || tdFlowState.value !== 'idle') return true;
                     if (form.value.mode === 'convert') {
                         if (form.value.files.length === 0 || form.value.target_ratios.length === 0) return true;
                     } else if (['video', 'multi_video'].includes(form.value.mode)) {
@@ -1462,6 +1584,8 @@
                     } else if (form.value.mode === 'extract') {
                         if (form.value.files.length === 0) return true;
                     } else if (form.value.mode === 'ecommerce') {
+                        if (form.value.files.length === 0) return true;
+                    } else if (form.value.mode === 'threed') {
                         if (form.value.files.length === 0) return true;
                     } else if (form.value.mode === 'multi_t2i') {
                         if (multiLineCount.value === 0) return true;
@@ -1692,6 +1816,74 @@
                     } catch (e) {}
                 };
 
+                // ── 3D图片转换流程 ──
+                const cancelThreedFlow = () => {
+                    tdFlowState.value = 'idle';
+                    isSubmitting.value = false;
+                };
+
+                const runThreedJobSubmit = async () => {
+                    tdFlowState.value = 'td_job_submitting';
+                    try {
+                        const tdData = tdStep1Data.value
+                            .filter(item => item.description && item.description.trim())
+                            .map(item => ({ description: item.description.trim(), image_name: item.image_name }));
+                        if (!tdData.length) throw new Error('没有有效的图案描述，请手动输入后重试');
+
+                        const fd = new FormData();
+                        fd.append('mode', 'threed');
+                        fd.append('model_id', form.value.model_id);
+                        fd.append('target_ratio', form.value.target_ratio || '1:1');
+                        fd.append('batch_size', 1);
+                        fd.append('threed_data', JSON.stringify(tdData));
+                        fd.append('prompts', '');
+                        fd.append('negative_prompt', form.value.negative_prompt || '');
+                        fd.append('template_name', '');
+
+                        const res = await authFetch('/api/jobs', { method: 'POST', body: fd });
+                        const data = await res.json();
+                        if (!res.ok || !data.id) throw new Error(data.error || '任务提交失败');
+
+                        tdFlowState.value = 'idle';
+                        isSubmitting.value = false;
+                        form.value.files = [];
+                        currentTab.value = 'jobs';
+                        fetchJobs();
+                        fetchCredit();
+                    } catch (e) {
+                        alert('任务提交失败：' + e.message);
+                        cancelThreedFlow();
+                    }
+                };
+
+                const proceedToThreedSubmit = async () => {
+                    isSubmitting.value = true;
+                    await runThreedJobSubmit();
+                };
+
+                const startThreedFlow = async () => {
+                    if (form.value.files.length === 0) { alert('请上传至少一张图片'); return; }
+                    isSubmitting.value = true;
+                    tdFlowState.value = 'td_step1_loading';
+                    try {
+                        const fd = new FormData();
+                        form.value.files.forEach(f => fd.append('images', f));
+                        const res = await authFetch('/api/threed/understand', { method: 'POST', body: fd });
+                        if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'AI 图案分析失败'); }
+                        const data = await res.json();
+                        tdStep1Data.value = data.items;
+                        if (tdSettings.value.one_shot || tdSettings.value.skip_step1_review) {
+                            await runThreedJobSubmit();
+                        } else {
+                            tdFlowState.value = 'td_step1_review';
+                            isSubmitting.value = false;
+                        }
+                    } catch (e) {
+                        alert('图案分析失败：' + e.message);
+                        cancelThreedFlow();
+                    }
+                };
+
                 const cancelEcommerceFlow = () => {
                     ecFlowState.value = 'idle';
                     isSubmitting.value = false;
@@ -1820,6 +2012,7 @@
 
                 const submitJob = async () => {
                     if (form.value.mode === 'ecommerce') { await startEcommerceFlow(); return; }
+                    if (form.value.mode === 'threed') { await startThreedFlow(); return; }
 
                     // 多视频生成：按行拆分提示词，逐条调用视频生成接口
                     if (form.value.mode === 'multi_video') {
@@ -1984,7 +2177,7 @@
                     } catch (error) { alert("下载文件时遇到错误！"); }
                 };
 
-                const MODE_LABELS = { t2i: '文本生图', i2i: '图像生图', fission: '图片裂变', convert: 'AI尺寸重绘', video: '视频生成', multi_t2i: '多图生成', multi_video: '多视频生成', extract: '图案提取生图', ecommerce: '电商场景生图' };
+                const MODE_LABELS = { t2i: '文本生图', i2i: '图像生图', fission: '图片裂变', convert: 'AI尺寸重绘', video: '视频生成', multi_t2i: '多图生成', multi_video: '多视频生成', extract: '图案提取生图', ecommerce: '电商场景生图', threed: '3D图片转换' };
                 const getModeLabel = (mode) => MODE_LABELS[mode] || mode;
 
                 const getSubtaskResult = (job, subtaskId) => (job.results || []).find(r => r.task_id === subtaskId) || null;
@@ -2038,7 +2231,9 @@
                     isVideoFile, filteredModels, estimateCredits, isAliyunModel, multiLineCount,
                     jobDetailModal, openJobDetail, getModeLabel, getSubtaskResult,
                     ecFlowState, ecStep1Data, ecStep2Data, ecSettings,
-                    cancelEcommerceFlow, proceedToStep2, proceedToSubmit, backToStep1, saveEcSettings
+                    cancelEcommerceFlow, proceedToStep2, proceedToSubmit, backToStep1, saveEcSettings,
+                    tdFlowState, tdStep1Data, tdSettings,
+                    cancelThreedFlow, proceedToThreedSubmit
                 };
             }
         }).mount('#app');

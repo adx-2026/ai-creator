@@ -660,6 +660,47 @@ async def understand_product(image_path: str) -> str:
     raise Exception("Qwen VL 未返回产品描述")
 
 
+# ==========================================
+# 3D图片转换 - 两步 Pipeline
+# ==========================================
+_THREED_UNDERSTAND_PROMPT = (
+    "Analyze this image and describe the pattern, design, or graphic content visible in it. "
+    "Provide a concise, detailed English description of: the main subject or motif, colors, artistic style, "
+    "shapes, compositional elements, and any notable textures or visual details. "
+    "Focus on what would help recreate this as an embroidery design. "
+    "Reply with the description only, no extra explanation."
+)
+
+_THREED_PROMPT_TEMPLATE = (
+    "A highly detailed realistic embroidery of {description}, stitched with colorful threads on a clean, "
+    "plain knitted/woven fabric background. The design features intricate thread work with visible stitch patterns, "
+    "3D raised embroidery effect, satin stitch and fill stitch techniques, precise needlework details. "
+    "The embroidery faithfully reproduces the original flat illustration with textured yarn and thread, "
+    "showing realistic fiber texture and slight dimensional relief. Clean and minimal background with no other objects, "
+    "no clutter, no wrinkles, no stains. Centered composition, natural soft lighting, close-up macro photography style, studio shot."
+)
+
+
+async def understand_threed_pattern(image_path: str) -> str:
+    """调用 Qwen VL 模型分析图片图案内容，返回英文图案描述"""
+    vl_model = os.getenv("QWEN_VL_MODEL", "qwen3-vl-plus")
+    await aliyun_rate_limiter.wait(vl_model)
+    with open(image_path, "rb") as f:
+        b64_data = base64.b64encode(f.read()).decode("utf-8")
+    ext = os.path.splitext(image_path)[1].lower().lstrip(".").replace("jpg", "jpeg") or "jpeg"
+    messages = [{"role": "user", "content": [
+        {"image": f"data:image/{ext};base64,{b64_data}"},
+        {"text": _THREED_UNDERSTAND_PROMPT},
+    ]}]
+    rsp = await asyncio.to_thread(MultiModalConversation.call, model=vl_model, messages=messages)
+    if rsp.status_code != 200:
+        raise Exception(f"Qwen VL 图案分析失败: {rsp.message}")
+    for item in rsp.output.choices[0].message.content:
+        if "text" in item:
+            return item["text"].strip()
+    raise Exception("Qwen VL 未返回图案描述")
+
+
 async def call_qwen_text_model(prompt: str, system_prompt: str = "") -> str:
     """调用 Qwen3 文本推理模型，返回文本响应"""
     model_id = os.getenv("QWEN_TEXT_MODEL", "qwen3-235b-a22b")
@@ -1344,6 +1385,54 @@ async def ecommerce_scenes(request: Request, curr: dict = Depends(get_current_us
     return {"items": items_out}
 
 
+@app.post("/api/threed/understand")
+async def threed_understand(
+    images: Optional[List[UploadFile]] = File(None),
+    curr: dict = Depends(get_current_user)
+):
+    """Step 1：Qwen VL 分析每张图片的图案内容，返回图案描述"""
+    user = curr["username"]
+    vl_model = os.getenv("QWEN_VL_MODEL", "qwen3-vl-plus")
+    user_dir = f"users/{user}/outputs"
+    os.makedirs(user_dir, exist_ok=True)
+
+    if not images:
+        return JSONResponse(status_code=400, content={"error": "请上传至少一张图片"})
+
+    items = []
+    for img in images:
+        if not img or not getattr(img, "filename", None):
+            continue
+        fname = f"{uuid.uuid4().hex[:8]}_{img.filename}"
+        path = os.path.join(user_dir, fname)
+        img_data = await img.read()
+        with open(path, "wb") as f:
+            f.write(img_data)
+
+        display_url = f"/api/images/{user}/{fname}"
+        try:
+            description = await understand_threed_pattern(path)
+            credit_cost = get_vl_credit_per_call(vl_model)
+            await deduct_credits(user, credit_cost)
+            items.append({
+                "image_path": path,
+                "image_name": img.filename,
+                "display_url": display_url,
+                "description": description,
+                "credit_cost": credit_cost,
+            })
+        except Exception as e:
+            items.append({
+                "image_path": path,
+                "image_name": img.filename,
+                "display_url": display_url,
+                "description": "",
+                "error": str(e),
+            })
+
+    return {"items": items}
+
+
 @app.post("/api/jobs")
 async def create_job(
     prompts: str = Form(""), negative_prompt: str = Form(""), mode: str = Form(...),
@@ -1352,7 +1441,7 @@ async def create_job(
     video_size: str = Form("1280*720"), video_duration: int = Form(5),
     video_shot_type: str = Form("single"), video_audio: bool = Form(True),
     video_watermark: bool = Form(False),
-    ecommerce_data: str = Form(""),
+    ecommerce_data: str = Form(""), threed_data: str = Form(""),
     images: Optional[List[UploadFile]] = File(None), curr: dict = Depends(get_current_user)
 ):
     # ── 电商场景模式：直接构建子任务并提交，提前返回 ──
@@ -1380,6 +1469,28 @@ async def create_job(
             return JSONResponse(status_code=400, content={"error": "没有有效的场景数据"})
         job = await job_queue.add_job(
             curr['username'], "ecommerce", prompts_ec, source_paths_ec,
+            template_name, model_id, negative_prompt, 1, target_ratio, video_params=None
+        )
+        return job
+
+    # ── 3D图片转换模式：构建最终提示词并提交纯文生图子任务 ──
+    if mode == "threed":
+        if not threed_data:
+            return JSONResponse(status_code=400, content={"error": "threed mode requires threed_data"})
+        try:
+            td_items = json.loads(threed_data)
+        except Exception:
+            return JSONResponse(status_code=400, content={"error": "threed_data JSON 格式错误"})
+        prompts_td = []
+        for item in td_items:
+            desc = (item.get("description") or "").strip()
+            if desc:
+                final_prompt = _THREED_PROMPT_TEMPLATE.format(description=desc)
+                prompts_td.append(final_prompt)
+        if not prompts_td:
+            return JSONResponse(status_code=400, content={"error": "没有有效的图案描述数据"})
+        job = await job_queue.add_job(
+            curr['username'], "threed", prompts_td, None,
             template_name, model_id, negative_prompt, 1, target_ratio, video_params=None
         )
         return job
