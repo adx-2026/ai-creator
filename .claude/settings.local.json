@@ -1,7 +1,23 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python -c \"import ast; ast.parse\\(open\\('main.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")"
+      "Bash(python -c \"import ast; ast.parse\\(open\\('main.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(python -c \"from main import app; print\\('Backend loaded OK. Routes:', len\\(app.routes\\)\\)\")",
+      "Bash(python -c ':*)",
+      "Bash(python -c \"from main import app; print\\('Backend OK, routes:', len\\(app.routes\\)\\)\")",
+      "Bash(python -m uvicorn main:app --host 0.0.0.0 --port 8000)",
+      "Bash(curl -s http://localhost:8000/)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8000/js/main.js)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8000/js/api.js)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8000/css/app.css)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8000/js/composables/useAuth.js)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8000/js/composables/useForm.js)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8000/js/composables/useEcommerce.js)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8000/js/composables/useThreed.js)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8000/js/constants.js)",
+      "Bash(curl -s -X POST http://localhost:8000/api/login -F \"username=test\" -F \"password=wrong\")",
+      "Bash(curl -sI http://localhost:8000/js/main.js)",
+      "Bash(taskkill //F //PID 18320)"
     ]
   }
 }
