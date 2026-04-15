@@ -146,3 +146,18 @@ FastAPI (main.py)
 - **后端**: FastAPI APIRouter 模式，按职责拆分为 routes / providers / pipelines
 - **Provider 模式**: `ImageProvider` 抽象基类 + 工厂函数 `get_provider_for_model()`，新增模型只需实现一个 provider
 - **Pipeline 模式**: 多步骤 AI 流水线（VL 理解 → 文本生成 → 图像生成），每步独立可测试
+
+## Claude Code Routine API 开发流程
+
+本项目支持通过 Claude Code Routine API 进行自动化开发。当 Routine 被触发时，AI Agent 会按照以下步骤执行：
+
+### 执行步骤
+
+1. **读取项目规范** — 阅读根目录 CLAUDE.md，严格遵守架构约定和分支规范
+2. **获取待处理 Issue** — 查找带有 `claude` label 且状态为 open 的 Issue，选择编号最小的一个处理。如果没有符合条件的 Issue，则不执行任何修改
+3. **实现需求** — 按 CLAUDE.md 的架构约定实现，只读取与本次任务直接相关的文件
+4. **提交 PR** — 按分支规范提交代码并开 PR，PR 描述包含修改文件列表、实现说明、测试步骤和 `Closes #issue号`
+
+### 使用方式
+
+通过 GitHub API 创建带有 `claude` label 的 Issue 即可触发开发流程。
