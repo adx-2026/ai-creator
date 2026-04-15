@@ -5,8 +5,8 @@
 # ==========================================
 
 # 定义变量
-PROJECT_DIR="/opt/ai-creater"
-SERVICE_NAME="ai-creater.service"
+PROJECT_DIR="/opt/ai-creator"
+SERVICE_NAME="ai-creator.service"
 BRANCH="main" 
 
 echo "🚀 开始更新项目: AI Creator Space..."
