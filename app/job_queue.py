@@ -24,7 +24,7 @@ from app.credits import (
 from app.rate_limiter import run_with_retries
 from app.providers import get_provider_for_model
 from app.providers.wan_video import WanVideoProvider
-from app.pipelines.extract import extract_pattern_prompt
+from app.pipelines.extract import extract_pattern_prompt, generate_product_title
 
 
 class JobQueue:
@@ -83,6 +83,7 @@ class JobQueue:
         batch_size: int = 1,
         target_ratio: str = "",
         video_params: Optional[Dict] = None,
+        fission_title_template: str = "",
     ) -> dict:
         job_id = str(uuid.uuid4())
         subtasks = build_subtasks(mode, prompts, source_image_paths, batch_size)
@@ -96,6 +97,7 @@ class JobQueue:
             "batch_size": batch_size,
             "subtasks": subtasks,
             "estimated_credits": estimated_credits,
+            "fission_title_template": fission_title_template,
         }
         refresh_job_progress(self.jobs[job_id])
         self.sync_user_jobs(user)
@@ -299,6 +301,7 @@ async def _process_images(
 ):
     provider = get_provider_for_model(model_id)
     tasks = [t for t in job.get("subtasks", []) if t.get("status") == "pending"]
+    fission_title_template = job.get("fission_title_template", "")
 
     sem = asyncio.Semaphore(SUBTASK_CONCURRENCY)
     completed_times: List[float] = []
@@ -325,8 +328,23 @@ async def _process_images(
                 )
                 subtask["status"] = "success"
                 credit_cost = round(len(generated_images) * get_image_credit_per_image(model_id), 4)
+
+                # ── Fission title generation ──
+                titles = []
+                if job.get("mode") == "fission" and fission_title_template:
+                    vl_credit = get_vl_credit_per_call(os.getenv("QWEN_VL_MODEL", "qwen3-vl-plus"))
+                    for img_rec in generated_images:
+                        img_filename = img_rec["url"].split("/")[-1]
+                        gen_img_path = os.path.join(user_dir, img_filename)
+                        try:
+                            title = await generate_product_title(gen_img_path, fission_title_template)
+                            titles.append(title)
+                            credit_cost = round(credit_cost + vl_credit, 4)
+                        except Exception:
+                            titles.append("")
+
                 await deduct_credits(user, credit_cost)
-                upsert_task_result(job, subtask, {
+                result_payload = {
                     "prompt": prompt,
                     "source_img": os.path.basename(img_path).split("_", 1)[-1] if img_path else None,
                     "result": final_text.strip(),
@@ -334,7 +352,10 @@ async def _process_images(
                     "status": "success",
                     "attempts": subtask["attempts"],
                     "credit_cost": credit_cost,
-                })
+                }
+                if titles:
+                    result_payload["titles"] = titles
+                upsert_task_result(job, subtask, result_payload)
             except Exception as e:
                 subtask["status"] = "error"
                 upsert_task_result(job, subtask, {

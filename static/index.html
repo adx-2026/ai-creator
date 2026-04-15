@@ -462,6 +462,20 @@
                                     </p>
                                 </div>
 
+                                <!-- 裂变标题生成 -->
+                                <div v-show="form.mode === 'fission'" class="mb-8 p-5 rounded-xl border bg-amber-50 border-amber-100">
+                                    <label class="block text-sm font-semibold text-amber-800 mb-1">
+                                        <i class="fas fa-tag mr-1.5 text-amber-500"></i>产品标题关键词模板
+                                        <span class="text-xs font-normal text-amber-600 ml-1.5">(选填，填写后 AI 将为每张裂变图自动生成标题)</span>
+                                    </label>
+                                    <textarea v-model="form.fission_title_template" rows="2"
+                                        class="shadow-sm focus:ring-amber-500 focus:border-amber-500 block w-full sm:text-sm border-gray-300 rounded-xl p-3 bg-white text-gray-800 transition-colors mt-2"
+                                        placeholder="例如：动物玩偶 毛绒 儿童礼物 可爱 [动物名] 公仔"></textarea>
+                                    <p class="text-xs text-amber-600/80 mt-2">
+                                        <i class="fas fa-lightbulb mr-1"></i>AI 会识别每张裂变图的内容，将实际识别到的主体融入模板，生成完整的 SEO 产品标题。
+                                    </p>
+                                </div>
+
                                 <!-- 电商场景设置 -->
                                 <div v-show="form.mode === 'ecommerce'" class="mb-6 bg-purple-50 border border-purple-100 rounded-xl p-4">
                                     <label class="font-semibold text-sm text-purple-800 mb-3 block">
@@ -786,24 +800,43 @@
                                                 </div>
                                                 <div v-if="res.images && res.images.length > 0"
                                                     class="grid grid-cols-2 gap-2">
-                                                    <div v-for="img in res.images"
-                                                        class="relative group rounded-lg overflow-hidden bg-gray-100 shadow-sm aspect-square">
-                                                        <img :src="img.url + '?token=' + getToken()"
-                                                            :class="job.target_ratio ? 'object-contain' : 'object-cover'"
-                                                            class="w-full h-full" />
-                                                        <div
-                                                            class="absolute inset-0 bg-gray-900/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all duration-300 gap-3 backdrop-blur-[1px]">
-                                                            <button
-                                                                @click.prevent="downloadImage(img.url, img.download_name)"
-                                                                class="w-10 h-10 rounded-full bg-indigo-600/80 hover:bg-indigo-600 text-white flex items-center justify-center transition-colors transform hover:scale-110 shadow-sm border border-indigo-400"
-                                                                title="直接下载">
-                                                                <i class="fas fa-download"></i>
+                                                    <div v-for="(img, imgIdx) in res.images" :key="img.url"
+                                                        class="flex flex-col gap-1">
+                                                        <div class="relative group rounded-lg overflow-hidden bg-gray-100 shadow-sm aspect-square">
+                                                            <img :src="img.url + '?token=' + getToken()"
+                                                                :class="job.target_ratio ? 'object-contain' : 'object-cover'"
+                                                                class="w-full h-full" />
+                                                            <div
+                                                                class="absolute inset-0 bg-gray-900/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all duration-300 gap-3 backdrop-blur-[1px]">
+                                                                <button
+                                                                    @click.prevent="downloadImage(img.url, img.download_name)"
+                                                                    class="w-10 h-10 rounded-full bg-indigo-600/80 hover:bg-indigo-600 text-white flex items-center justify-center transition-colors transform hover:scale-110 shadow-sm border border-indigo-400"
+                                                                    title="直接下载">
+                                                                    <i class="fas fa-download"></i>
+                                                                </button>
+                                                                <a :href="img.url + '?token=' + getToken()" target="_blank"
+                                                                    class="w-10 h-10 rounded-full bg-emerald-600/80 hover:bg-emerald-600 text-white flex items-center justify-center transition-colors transform hover:scale-110 shadow-sm border border-emerald-400"
+                                                                    title="新标签页预览">
+                                                                    <i class="fas fa-external-link-alt"></i>
+                                                                </a>
+                                                            </div>
+                                                        </div>
+                                                        <!-- 裂变图片标题 -->
+                                                        <div v-if="job.mode === 'fission' && res.titles && res.titles[imgIdx]"
+                                                            class="relative group/title text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5 leading-snug flex items-start gap-1">
+                                                            <i class="fas fa-tag text-amber-400 mt-0.5 shrink-0"></i>
+                                                            <span class="line-clamp-3 flex-1">{{ res.titles[imgIdx] }}</span>
+                                                            <!-- 复制按钮 -->
+                                                            <button @click.stop="copyToClipboard(res.titles[imgIdx])"
+                                                                class="shrink-0 opacity-0 group-hover/title:opacity-100 transition-opacity w-5 h-5 rounded bg-amber-200 hover:bg-amber-300 text-amber-700 flex items-center justify-center"
+                                                                title="复制标题">
+                                                                <i class="fas fa-copy text-[10px]"></i>
                                                             </button>
-                                                            <a :href="img.url + '?token=' + getToken()" target="_blank"
-                                                                class="w-10 h-10 rounded-full bg-emerald-600/80 hover:bg-emerald-600 text-white flex items-center justify-center transition-colors transform hover:scale-110 shadow-sm border border-emerald-400"
-                                                                title="新标签页预览">
-                                                                <i class="fas fa-external-link-alt"></i>
-                                                            </a>
+                                                            <!-- 悬浮完整预览 -->
+                                                            <div class="absolute bottom-full left-0 mb-1.5 z-20 hidden group-hover/title:block w-56 bg-gray-900 text-white text-xs rounded-lg px-3 py-2 shadow-xl leading-relaxed pointer-events-none">
+                                                                {{ res.titles[imgIdx] }}
+                                                                <div class="absolute top-full left-4 border-4 border-transparent border-t-gray-900"></div>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </div>

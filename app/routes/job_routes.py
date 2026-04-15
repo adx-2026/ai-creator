@@ -37,6 +37,7 @@ async def create_job(
     video_watermark: bool = Form(False),
     ecommerce_data: str = Form(""),
     threed_data: str = Form(""),
+    fission_title_template: str = Form(""),
     images: Optional[List[UploadFile]] = File(None),
     curr: dict = Depends(get_current_user),
 ):
@@ -143,6 +144,7 @@ async def create_job(
         curr["username"], mode, prompts_list, source_paths,
         template_name, model_id, negative_prompt, batch_size, target_ratio,
         video_params=video_params,
+        fission_title_template=fission_title_template if mode == "fission" else "",
     )
     return job
 

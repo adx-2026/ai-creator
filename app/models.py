@@ -75,6 +75,7 @@ def normalize_job(job: Dict[str, Any]):
     job.setdefault("video_params", {})
     job.setdefault("batch_size", 1)
     job.setdefault("eta", None)
+    job.setdefault("fission_title_template", "")
     if not job.get("subtasks"):
         subtasks = []
         for res in job.get("results", []):

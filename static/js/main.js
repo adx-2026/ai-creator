@@ -63,6 +63,7 @@ export default {
             target_ratio: '1:1',
             target_ratios: [],
             videoParams: { size: '1280*720', duration: 5, shot_type: 'single', audio: true, watermark: false },
+            fission_title_template: '',
         });
 
         // ── Ecommerce flow ──
@@ -122,6 +123,21 @@ export default {
         };
 
         const renderMarkdown = (text) => text ? marked.parse(text) : '';
+
+        const copyToClipboard = async (text) => {
+            try {
+                await navigator.clipboard.writeText(text);
+            } catch {
+                const el = document.createElement('textarea');
+                el.value = text;
+                el.style.position = 'fixed';
+                el.style.opacity = '0';
+                document.body.appendChild(el);
+                el.select();
+                document.execCommand('copy');
+                document.body.removeChild(el);
+            }
+        };
 
         // ── Lifecycle orchestration ──
         const initializeUserSpace = () => {
@@ -202,7 +218,7 @@ export default {
             cancelThreedFlow, proceedToThreedSubmit,
 
             // Utilities
-            formatDate, renderMarkdown, getToken,
+            formatDate, renderMarkdown, getToken, copyToClipboard,
         };
     },
 };

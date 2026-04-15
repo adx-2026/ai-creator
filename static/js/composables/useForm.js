@@ -209,6 +209,9 @@ export function useForm(form, currentTab, fetchJobs, fetchCredit, userValue, ecS
                 fd.append('video_watermark', vp.watermark);
             }
             fd.append('template_name', tplName);
+            if (form.value.mode === 'fission') {
+                fd.append('fission_title_template', form.value.fission_title_template || '');
+            }
             if (['i2i', 'fission', 'convert', 'video', 'extract'].includes(form.value.mode)) {
                 form.value.files.forEach(file => fd.append('images', file));
             }
@@ -228,7 +231,9 @@ export function useForm(form, currentTab, fetchJobs, fetchCredit, userValue, ecS
                 else { alert('提交失败: ' + (data.error || "未知原因")); break; }
             }
             if (anyOk) {
-                form.value.prompts = ''; form.value.negative_prompt = ''; removeAllFiles();
+                form.value.prompts = ''; form.value.negative_prompt = '';
+                form.value.fission_title_template = '';
+                removeAllFiles();
                 currentTab.value = 'jobs'; fetchJobs(userValue());
             }
         } catch (error) { alert('请求发生错误: ' + error.message); }
