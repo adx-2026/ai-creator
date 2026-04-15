@@ -14,6 +14,7 @@ import { useDownload } from './composables/useDownload.js';
 import { useForm } from './composables/useForm.js';
 import { useEcommerce } from './composables/useEcommerce.js';
 import { useThreed } from './composables/useThreed.js';
+import { useDimension } from './composables/useDimension.js';
 
 export default {
     setup() {
@@ -80,6 +81,12 @@ export default {
             startThreedFlow, linkSubmitting: tdLinkSubmitting,
         } = useThreed(form, currentTab, fetchJobs, fetchCredit, userValue);
 
+        // ── Dimension annotation flow ──
+        const {
+            dimState, dimResult, dimError, dimSettings,
+            cancelDimensionFlow, startDimensionFlow, linkSubmitting: dimLinkSubmitting,
+        } = useDimension(form, fetchCredit);
+
         // ── Form & submission ──
         const {
             availableModels, isDragging, isSubmitting, fileInput, multiLineCount,
@@ -90,13 +97,14 @@ export default {
             fetchModels, submitJob: _submitJob,
         } = useForm(
             form, currentTab, fetchJobs, fetchCredit, userValue,
-            ecSettings, ecFlowState, tdFlowState,
-            startEcommerceFlow, startThreedFlow,
+            ecSettings, ecFlowState, tdFlowState, dimState,
+            startEcommerceFlow, startThreedFlow, startDimensionFlow,
         );
 
-        // Link ecommerce/threed submitting state to form's isSubmitting
+        // Link ecommerce/threed/dimension submitting state to form's isSubmitting
         ecLinkSubmitting((v) => { isSubmitting.value = v; });
         tdLinkSubmitting((v) => { isSubmitting.value = v; });
+        dimLinkSubmitting((v) => { isSubmitting.value = v; });
 
         // ── Templates ──
         const {
@@ -216,6 +224,9 @@ export default {
             // 3D flow
             tdFlowState, tdStep1Data, tdSettings,
             cancelThreedFlow, proceedToThreedSubmit,
+
+            // Dimension annotation flow
+            dimState, dimResult, dimError, dimSettings, cancelDimensionFlow,
 
             // Utilities
             formatDate, renderMarkdown, getToken, copyToClipboard,
