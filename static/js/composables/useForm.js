@@ -192,7 +192,7 @@ export function useForm(form, currentTab, fetchJobs, fetchCredit, userValue, ecS
         let tplName = form.value.selectedTemplate;
         if (tplName.includes(':')) tplName = tplName.split(':')[1];
 
-        const buildFd = (ratio) => {
+        const buildFd = (ratio, imageFiles) => {
             const fd = new FormData();
             fd.append('prompts', finalPrompt);
             fd.append('negative_prompt', form.value.negative_prompt);
@@ -213,7 +213,7 @@ export function useForm(form, currentTab, fetchJobs, fetchCredit, userValue, ecS
                 fd.append('fission_title_template', form.value.fission_title_template || '');
             }
             if (['i2i', 'fission', 'convert', 'video', 'extract'].includes(form.value.mode)) {
-                form.value.files.forEach(file => fd.append('images', file));
+                imageFiles.forEach(file => fd.append('images', file));
             }
             return fd;
         };
@@ -222,13 +222,27 @@ export function useForm(form, currentTab, fetchJobs, fetchCredit, userValue, ecS
             ? form.value.target_ratios.slice()
             : [form.value.target_ratio];
 
+        // Split images into batches to avoid oversized multipart requests
+        const IMAGE_BATCH_SIZE = 20;
+        const allFiles = form.value.files;
+        const fileBatches = [];
+        if (allFiles.length > 0) {
+            for (let i = 0; i < allFiles.length; i += IMAGE_BATCH_SIZE) {
+                fileBatches.push(allFiles.slice(i, i + IMAGE_BATCH_SIZE));
+            }
+        } else {
+            fileBatches.push([]);
+        }
+
         try {
             let anyOk = false;
-            for (const ratio of ratiosToSubmit) {
-                const response = await authFetch('/api/jobs', { method: 'POST', body: buildFd(ratio) });
-                const data = await response.json();
-                if (response.ok && data.id) { anyOk = true; }
-                else { alert('提交失败: ' + (data.error || "未知原因")); break; }
+            outer: for (const ratio of ratiosToSubmit) {
+                for (const batch of fileBatches) {
+                    const response = await authFetch('/api/jobs', { method: 'POST', body: buildFd(ratio, batch) });
+                    const data = await response.json();
+                    if (response.ok && data.id) { anyOk = true; }
+                    else { alert('提交失败: ' + (data.error || "未知原因")); break outer; }
+                }
             }
             if (anyOk) {
                 form.value.prompts = ''; form.value.negative_prompt = '';
