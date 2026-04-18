@@ -14,6 +14,7 @@ import { useDownload } from './composables/useDownload.js';
 import { useForm } from './composables/useForm.js';
 import { useEcommerce } from './composables/useEcommerce.js';
 import { useThreed } from './composables/useThreed.js';
+import { useSizeAnnotation } from './composables/useSizeAnnotation.js';
 
 export default {
     setup() {
@@ -80,6 +81,13 @@ export default {
             startThreedFlow, linkSubmitting: tdLinkSubmitting,
         } = useThreed(form, currentTab, fetchJobs, fetchCredit, userValue);
 
+        // ── Size annotation flow ──
+        const {
+            saFlowState, saResult, saParams,
+            cancelSizeAnnotFlow, resetSizeAnnotResult,
+            startSizeAnnotFlow, linkSubmitting: saLinkSubmitting,
+        } = useSizeAnnotation(form, fetchCredit, userValue);
+
         // ── Form & submission ──
         const {
             availableModels, isDragging, isSubmitting, fileInput, multiLineCount,
@@ -90,13 +98,14 @@ export default {
             fetchModels, submitJob: _submitJob,
         } = useForm(
             form, currentTab, fetchJobs, fetchCredit, userValue,
-            ecSettings, ecFlowState, tdFlowState,
-            startEcommerceFlow, startThreedFlow,
+            ecSettings, ecFlowState, tdFlowState, saFlowState,
+            startEcommerceFlow, startThreedFlow, startSizeAnnotFlow,
         );
 
-        // Link ecommerce/threed submitting state to form's isSubmitting
+        // Link ecommerce/threed/size-annot submitting state to form's isSubmitting
         ecLinkSubmitting((v) => { isSubmitting.value = v; });
         tdLinkSubmitting((v) => { isSubmitting.value = v; });
+        saLinkSubmitting((v) => { isSubmitting.value = v; });
 
         // ── Templates ──
         const {
@@ -107,7 +116,7 @@ export default {
 
         // ── Credit-aware estimateCredits wrapper (template calls with no args) ──
         const estimateCredits = () =>
-            _estimateCredits(form.value, calculateTotalTasks, ecSettings.value, multiLineCount.value);
+            _estimateCredits(form.value, calculateTotalTasks, ecSettings.value, multiLineCount.value, saParams.value);
 
         // ── Extended isSubmitDisabled (adds credit balance check) ──
         const isSubmitDisabled = computed(() => {
@@ -216,6 +225,10 @@ export default {
             // 3D flow
             tdFlowState, tdStep1Data, tdSettings,
             cancelThreedFlow, proceedToThreedSubmit,
+
+            // Size annotation flow
+            saFlowState, saResult, saParams,
+            cancelSizeAnnotFlow, resetSizeAnnotResult,
 
             // Utilities
             formatDate, renderMarkdown, getToken, copyToClipboard,

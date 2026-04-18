@@ -5,7 +5,7 @@
 import { ref, computed } from 'vue';
 import { authFetch } from '../api.js';
 
-export function useForm(form, currentTab, fetchJobs, fetchCredit, userValue, ecSettings, ecFlowState, tdFlowState, startEcommerceFlow, startThreedFlow) {
+export function useForm(form, currentTab, fetchJobs, fetchCredit, userValue, ecSettings, ecFlowState, tdFlowState, saFlowState, startEcommerceFlow, startThreedFlow, startSizeAnnotFlow) {
 
     const availableModels = ref([]);
     const isDragging = ref(false);
@@ -32,6 +32,7 @@ export function useForm(form, currentTab, fetchJobs, fetchCredit, userValue, ecS
         if (form.value.mode === 'extract') return form.value.files.length > 0 ? form.value.files.length : 1;
         if (form.value.mode === 'ecommerce') return (form.value.files.length || 1) * (ecSettings.value.scene_count || 3);
         if (form.value.mode === 'threed') return form.value.files.length || 1;
+        if (form.value.mode === 'size_annot') return 1;
         let fileCount = ['i2i', 'fission', 'convert'].includes(form.value.mode) && form.value.files.length > 0 ? form.value.files.length : 1;
         let bSize = form.value.mode === 'fission' ? form.value.batch_size : 1;
         let ratioMul = form.value.mode === 'convert' ? Math.max(form.value.target_ratios.length, 1) : 1;
@@ -39,7 +40,7 @@ export function useForm(form, currentTab, fetchJobs, fetchCredit, userValue, ecS
     };
 
     const isSubmitDisabled = computed(() => {
-        if (isSubmitting.value || ecFlowState.value !== 'idle' || tdFlowState.value !== 'idle') return true;
+        if (isSubmitting.value || ecFlowState.value !== 'idle' || tdFlowState.value !== 'idle' || saFlowState.value === 'loading') return true;
         if (form.value.mode === 'convert') {
             if (form.value.files.length === 0 || form.value.target_ratios.length === 0) return true;
         } else if (['video', 'multi_video'].includes(form.value.mode)) {
@@ -52,6 +53,8 @@ export function useForm(form, currentTab, fetchJobs, fetchCredit, userValue, ecS
         } else if (form.value.mode === 'ecommerce') {
             if (form.value.files.length === 0) return true;
         } else if (form.value.mode === 'threed') {
+            if (form.value.files.length === 0) return true;
+        } else if (form.value.mode === 'size_annot') {
             if (form.value.files.length === 0) return true;
         } else if (form.value.mode === 'multi_t2i') {
             if (multiLineCount.value === 0) return true;
@@ -87,7 +90,7 @@ export function useForm(form, currentTab, fetchJobs, fetchCredit, userValue, ecS
     const handlePaste = (event) => {
         const items = event.clipboardData && event.clipboardData.items;
         if (!items) return;
-        if (!['i2i', 'fission', 'convert', 'video', 'multi_video', 'extract', 'ecommerce'].includes(form.value.mode)) return;
+        if (!['i2i', 'fission', 'convert', 'video', 'multi_video', 'extract', 'ecommerce', 'size_annot'].includes(form.value.mode)) return;
         Array.from(items).forEach(item => {
             if (item.kind === 'file') {
                 const file = item.getAsFile();
@@ -154,6 +157,7 @@ export function useForm(form, currentTab, fetchJobs, fetchCredit, userValue, ecS
     const submitJob = async () => {
         if (form.value.mode === 'ecommerce') { await startEcommerceFlow(); return; }
         if (form.value.mode === 'threed') { await startThreedFlow(); return; }
+        if (form.value.mode === 'size_annot') { await startSizeAnnotFlow(); return; }
 
         if (form.value.mode === 'multi_video') {
             const lines = form.value.prompts.split('\n').map(l => l.trim()).filter(l => l);

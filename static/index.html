@@ -173,6 +173,11 @@
                                         class="px-6 py-2 rounded-full font-semibold transition-all text-sm">
                                         <i class="fas fa-cube mr-2"></i>3D图片转换
                                     </button>
+                                    <button @click="form.mode = 'size_annot'; resetSizeAnnotResult()"
+                                        :class="form.mode === 'size_annot' ? 'bg-white text-orange-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'"
+                                        class="px-6 py-2 rounded-full font-semibold transition-all text-sm">
+                                        <i class="fas fa-ruler-combined mr-2"></i>产品尺寸标注
+                                    </button>
                                     <button @click="form.mode = 'multi_t2i'"
                                         :class="form.mode === 'multi_t2i' ? 'bg-white text-teal-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'"
                                         class="px-6 py-2 rounded-full font-semibold transition-all text-sm">
@@ -190,7 +195,7 @@
                                     </button>
                                 </div>
 
-                                <div class="mb-6">
+                                <div class="mb-6" v-show="form.mode !== 'size_annot'">
                                     <label class="block text-sm font-semibold text-gray-700 mb-4">
                                         <i class="fas fa-microchip text-indigo-500 mr-1"></i>驱动引擎配置
                                         <span v-if="form.mode === 'video'"
@@ -290,7 +295,7 @@
                                     </div>
                                 </div>
 
-                                <div class="mb-6" v-show="form.mode !== 'video' && form.mode !== 'extract'">
+                                <div class="mb-6" v-show="form.mode !== 'video' && form.mode !== 'extract' && form.mode !== 'size_annot'">
                                     <label class="block text-sm font-semibold text-gray-700 mb-2">
                                         <i class="fas fa-crop-alt text-indigo-500 mr-1"></i>目标图片比例
                                         <span v-if="form.mode === 'convert'"
@@ -325,7 +330,7 @@
                                     </div>
                                 </div>
 
-                                <div class="mb-8" v-show="!['convert','extract','ecommerce'].includes(form.mode)">
+                                <div class="mb-8" v-show="!['convert','extract','ecommerce','size_annot'].includes(form.mode)">
                                     <div class="flex items-center justify-between mb-2">
                                         <label class="block text-sm font-semibold text-gray-700">
                                             <i class="fas fa-bookmark text-indigo-500 mr-1"></i>快捷加载提示模板 <span
@@ -360,7 +365,7 @@
                                     </div>
                                 </div>
 
-                                <div v-show="['i2i', 'fission', 'convert', 'video', 'multi_video', 'extract', 'ecommerce', 'threed'].includes(form.mode)" class="mb-8">
+                                <div v-show="['i2i', 'fission', 'convert', 'video', 'multi_video', 'extract', 'ecommerce', 'threed', 'size_annot'].includes(form.mode)" class="mb-8">
                                     <label class="block text-sm font-semibold text-gray-700 mb-2">
                                         <span v-if="form.mode === 'convert'">上传需要重绘比例的图片</span>
                                         <span v-else-if="['video','multi_video'].includes(form.mode)">参考素材上传 <span
@@ -374,12 +379,14 @@
                                                 class="text-xs font-normal text-purple-500 ml-1">(AI 将分析产品并生成多个电商场景展示图)</span></span>
                                         <span v-else-if="form.mode === 'threed'">图片上传 <span
                                                 class="text-xs font-normal text-cyan-500 ml-1">(AI 将理解图案内容，生成对应的3D刺绣效果图)</span></span>
+                                        <span v-else-if="form.mode === 'size_annot'">产品图片上传 <span
+                                                class="text-xs font-normal text-orange-500 ml-1">(白底图效果最佳，AI 将在原图上叠加尺寸标注)</span></span>
                                         <span v-else>参考图片上传 <span
                                                 class="text-xs font-normal text-gray-400 ml-1">(图生图每张独立生成，裂变模式单图扩增多张)</span></span>
                                     </label>
                                     <div @dragover.prevent="isDragging = true" @dragleave.prevent="isDragging = false"
                                         @drop.prevent="onDrop"
-                                        :class="{'border-rose-400 bg-rose-50 ring-4 ring-rose-50': isDragging && ['video','multi_video'].includes(form.mode), 'border-purple-500 bg-purple-50 ring-4 ring-purple-50': isDragging && form.mode === 'ecommerce', 'border-cyan-500 bg-cyan-50 ring-4 ring-cyan-50': isDragging && form.mode === 'threed', 'border-indigo-500 bg-indigo-50 ring-4 ring-indigo-50': isDragging && !['video','multi_video'].includes(form.mode) && form.mode !== 'ecommerce' && form.mode !== 'threed', 'border-purple-200 bg-purple-50/30': !isDragging && form.mode === 'ecommerce', 'border-cyan-200 bg-cyan-50/30': !isDragging && form.mode === 'threed', 'border-indigo-200 bg-indigo-50/30': !isDragging && form.mode === 'extract', 'border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-gray-400': !isDragging && form.mode !== 'extract' && form.mode !== 'ecommerce' && form.mode !== 'threed'}"
+                                        :class="{'border-rose-400 bg-rose-50 ring-4 ring-rose-50': isDragging && ['video','multi_video'].includes(form.mode), 'border-purple-500 bg-purple-50 ring-4 ring-purple-50': isDragging && form.mode === 'ecommerce', 'border-cyan-500 bg-cyan-50 ring-4 ring-cyan-50': isDragging && form.mode === 'threed', 'border-orange-500 bg-orange-50 ring-4 ring-orange-50': isDragging && form.mode === 'size_annot', 'border-indigo-500 bg-indigo-50 ring-4 ring-indigo-50': isDragging && !['video','multi_video'].includes(form.mode) && form.mode !== 'ecommerce' && form.mode !== 'threed' && form.mode !== 'size_annot', 'border-purple-200 bg-purple-50/30': !isDragging && form.mode === 'ecommerce', 'border-cyan-200 bg-cyan-50/30': !isDragging && form.mode === 'threed', 'border-orange-200 bg-orange-50/30': !isDragging && form.mode === 'size_annot', 'border-indigo-200 bg-indigo-50/30': !isDragging && form.mode === 'extract', 'border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-gray-400': !isDragging && form.mode !== 'extract' && form.mode !== 'ecommerce' && form.mode !== 'threed' && form.mode !== 'size_annot'}"
                                         class="mt-1 flex flex-col justify-center items-center px-6 py-12 border-2 border-dashed rounded-xl transition-all cursor-pointer min-h-[200px]"
                                         @click="triggerFileInput" tabindex="0">
                                         <div class="space-y-3 text-center pointer-events-none">
@@ -530,7 +537,103 @@
                                     <p class="text-xs text-cyan-500 mt-3"><i class="fas fa-info-circle mr-1"></i>每张上传的图片将生成一张对应的3D刺绣效果图</p>
                                 </div>
 
-                                <div class="mb-8" v-show="form.mode !== 'convert' && form.mode !== 'extract' && form.mode !== 'ecommerce' && form.mode !== 'threed'">
+                                <!-- 产品尺寸标注设置 -->
+                                <div v-show="form.mode === 'size_annot'" class="mb-6 bg-orange-50 border border-orange-100 rounded-xl p-4">
+                                    <label class="font-semibold text-sm text-orange-800 mb-3 block">
+                                        <i class="fas fa-ruler-combined mr-1.5 text-orange-500"></i>尺寸标注参数
+                                    </label>
+                                    <!-- 产品形状 -->
+                                    <div class="mb-4">
+                                        <label class="text-xs text-orange-700 font-medium block mb-1.5">产品形状</label>
+                                        <div class="flex gap-2">
+                                            <button @click="saParams.shape = 'square'"
+                                                :class="saParams.shape === 'square' ? 'bg-orange-600 text-white border-orange-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'"
+                                                class="flex-1 text-sm font-semibold py-2 px-4 border rounded-lg transition-all">
+                                                <i class="fas fa-square-full mr-1.5"></i>方形
+                                            </button>
+                                            <button @click="saParams.shape = 'circle'"
+                                                :class="saParams.shape === 'circle' ? 'bg-orange-600 text-white border-orange-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'"
+                                                class="flex-1 text-sm font-semibold py-2 px-4 border rounded-lg transition-all">
+                                                <i class="fas fa-circle mr-1.5"></i>圆形
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <!-- 尺寸参数 -->
+                                    <div v-if="saParams.shape === 'square'" class="grid grid-cols-3 gap-3 mb-4">
+                                        <div>
+                                            <label class="text-xs text-orange-700 font-medium block mb-1">长 (cm)</label>
+                                            <input type="number" v-model="saParams.length" min="0" step="0.1"
+                                                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-orange-500 focus:border-orange-500 bg-white"
+                                                placeholder="如：30">
+                                        </div>
+                                        <div>
+                                            <label class="text-xs text-orange-700 font-medium block mb-1">宽 (cm)</label>
+                                            <input type="number" v-model="saParams.width" min="0" step="0.1"
+                                                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-orange-500 focus:border-orange-500 bg-white"
+                                                placeholder="如：20">
+                                        </div>
+                                        <div>
+                                            <label class="text-xs text-orange-700 font-medium block mb-1">高 (cm)</label>
+                                            <input type="number" v-model="saParams.height" min="0" step="0.1"
+                                                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-orange-500 focus:border-orange-500 bg-white"
+                                                placeholder="如：15">
+                                        </div>
+                                    </div>
+                                    <div v-else class="mb-4">
+                                        <label class="text-xs text-orange-700 font-medium block mb-1">直径 (cm)</label>
+                                        <input type="number" v-model="saParams.diameter" min="0" step="0.1"
+                                            class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-orange-500 focus:border-orange-500 bg-white"
+                                            placeholder="如：25">
+                                    </div>
+                                    <!-- 输出尺寸 -->
+                                    <div class="grid grid-cols-2 gap-3 mb-4">
+                                        <div>
+                                            <label class="text-xs text-orange-700 font-medium block mb-1">输出宽度 (px)</label>
+                                            <input type="number" v-model="saParams.output_width" min="256" max="2048" step="64"
+                                                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-orange-500 focus:border-orange-500 bg-white"
+                                                placeholder="800">
+                                        </div>
+                                        <div>
+                                            <label class="text-xs text-orange-700 font-medium block mb-1">输出高度 (px)</label>
+                                            <input type="number" v-model="saParams.output_height" min="256" max="2048" step="64"
+                                                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-orange-500 focus:border-orange-500 bg-white"
+                                                placeholder="800">
+                                        </div>
+                                    </div>
+                                    <!-- 编辑模型 -->
+                                    <div>
+                                        <label class="text-xs text-orange-700 font-medium block mb-1.5">编辑模型</label>
+                                        <div class="flex gap-2">
+                                            <button @click="saParams.edit_model = 'qwen-image-edit-plus'"
+                                                :class="saParams.edit_model === 'qwen-image-edit-plus' ? 'bg-orange-600 text-white border-orange-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'"
+                                                class="flex-1 text-xs font-semibold py-2 px-3 border rounded-lg transition-all">
+                                                qwen-image-edit-plus <span class="opacity-60">(推荐)</span>
+                                            </button>
+                                            <button @click="saParams.edit_model = 'qwen-image-edit-max'"
+                                                :class="saParams.edit_model === 'qwen-image-edit-max' ? 'bg-orange-600 text-white border-orange-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'"
+                                                class="flex-1 text-xs font-semibold py-2 px-3 border rounded-lg transition-all">
+                                                qwen-image-edit-max
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <p class="text-xs text-orange-500 mt-3"><i class="fas fa-info-circle mr-1"></i>AI 将通过 VL 识别产品轮廓，再使用 image-edit 模型在原图上叠加标注线、箭头和尺寸文字。</p>
+
+                                    <!-- 标注结果预览 -->
+                                    <div v-if="saResult" class="mt-4 border-t border-orange-100 pt-4">
+                                        <p class="text-xs font-semibold text-orange-700 mb-2"><i class="fas fa-check-circle mr-1 text-green-500"></i>标注图生成完成</p>
+                                        <img :src="saResult.display_url + '?token=' + getToken()"
+                                            class="w-full max-h-80 object-contain rounded-xl border border-orange-200 bg-white shadow-sm mb-3">
+                                        <div class="flex items-center justify-between">
+                                            <span class="text-xs text-gray-500">消耗 {{ saResult.credit_cost }} 积分</span>
+                                            <a :href="saResult.display_url + '?token=' + getToken()" download
+                                                class="inline-flex items-center px-4 py-2 bg-orange-600 text-white text-xs font-semibold rounded-lg hover:bg-orange-700 transition-colors shadow-sm">
+                                                <i class="fas fa-download mr-1.5"></i>下载标注图
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="mb-8" v-show="form.mode !== 'convert' && form.mode !== 'extract' && form.mode !== 'ecommerce' && form.mode !== 'threed' && form.mode !== 'size_annot'">
                                     <label
                                         class="flex justify-between items-center text-sm font-semibold text-gray-700 mb-2">
                                         <span>
@@ -559,7 +662,7 @@
                                     </p>
                                 </div>
 
-                                <div class="mb-8" v-show="!['convert','video','multi_video','extract','ecommerce'].includes(form.mode)">
+                                <div class="mb-8" v-show="!['convert','video','multi_video','extract','ecommerce','size_annot'].includes(form.mode)">
                                     <label class="block text-sm font-semibold text-gray-700 mb-2">
                                         反向提示词 <span class="text-xs font-normal text-gray-400 ml-1">(Negative Prompt:
                                             不希望出现的元素)</span>
@@ -569,15 +672,15 @@
                                         placeholder="例如：白边, 阴影, 变形, 裁剪, 局部特写..."></textarea>
                                 </div>
 
-                                <div :class="form.mode === 'video' ? 'bg-rose-50 border-rose-100' : form.mode === 'ecommerce' ? 'bg-purple-50/60 border-purple-100' : (isAliyunModel(form.model_id) && userCredit !== null && userCredit < estimateCredits() ? 'bg-red-50 border-red-200' : 'bg-indigo-50/60 border-indigo-100')"
+                                <div :class="form.mode === 'video' ? 'bg-rose-50 border-rose-100' : form.mode === 'ecommerce' ? 'bg-purple-50/60 border-purple-100' : form.mode === 'size_annot' ? 'bg-orange-50/60 border-orange-100' : (isAliyunModel(form.model_id) && userCredit !== null && userCredit < estimateCredits() ? 'bg-red-50 border-red-200' : 'bg-indigo-50/60 border-indigo-100')"
                                     class="flex items-center justify-between p-4 rounded-xl border flex-wrap gap-3">
                                     <div class="text-sm font-medium text-gray-500 flex flex-col gap-1">
                                         <div>
-                                            即将提交: <span class="font-bold text-lg" :class="form.mode === 'video' ? 'text-rose-600' : form.mode === 'ecommerce' ? 'text-purple-600' : 'text-indigo-600'">{{
+                                            即将提交: <span class="font-bold text-lg" :class="form.mode === 'video' ? 'text-rose-600' : form.mode === 'ecommerce' ? 'text-purple-600' : form.mode === 'size_annot' ? 'text-orange-600' : 'text-indigo-600'">{{
                                                 calculateTotalTasks() }}</span>
                                             个任务
                                             <!-- 阿里云模型积分预估 -->
-                                            <span v-if="isAliyunModel(form.model_id)" class="ml-3 text-xs font-semibold px-2 py-0.5 rounded-full"
+                                            <span v-if="isAliyunModel(form.model_id) || form.mode === 'size_annot'" class="ml-3 text-xs font-semibold px-2 py-0.5 rounded-full"
                                                 :class="userCredit !== null && userCredit < estimateCredits() ? 'bg-red-100 text-red-600 border border-red-200' : 'bg-amber-50 text-amber-700 border border-amber-200'">
                                                 <i class="fas fa-coins mr-1"></i>预估消耗 {{ estimateCredits().toFixed(2) }} 积分
                                             </span>
@@ -589,10 +692,10 @@
                                         </div>
                                     </div>
                                     <button @click="submitJob" :disabled="isSubmitDisabled"
-                                        :class="['video','multi_video'].includes(form.mode) ? 'bg-rose-600 hover:bg-rose-700 focus:ring-rose-500' : form.mode === 'ecommerce' ? 'bg-purple-600 hover:bg-purple-700 focus:ring-purple-500' : form.mode === 'multi_t2i' ? 'bg-teal-600 hover:bg-teal-700 focus:ring-teal-500' : 'bg-indigo-600 hover:bg-indigo-700 focus:ring-indigo-500'"
+                                        :class="['video','multi_video'].includes(form.mode) ? 'bg-rose-600 hover:bg-rose-700 focus:ring-rose-500' : form.mode === 'ecommerce' ? 'bg-purple-600 hover:bg-purple-700 focus:ring-purple-500' : form.mode === 'size_annot' ? 'bg-orange-600 hover:bg-orange-700 focus:ring-orange-500' : form.mode === 'multi_t2i' ? 'bg-teal-600 hover:bg-teal-700 focus:ring-teal-500' : 'bg-indigo-600 hover:bg-indigo-700 focus:ring-indigo-500'"
                                         class="inline-flex items-center px-8 py-3.5 border border-transparent text-base font-bold rounded-xl shadow-lg text-white focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:-translate-y-0.5">
                                         <i class="fas fa-paper-plane mr-2"
-                                            v-if="!isSubmitting && !['convert','video','multi_video','extract','ecommerce','multi_t2i'].includes(form.mode)"></i>
+                                            v-if="!isSubmitting && !['convert','video','multi_video','extract','ecommerce','multi_t2i','size_annot'].includes(form.mode)"></i>
                                         <i class="fas fa-list-ul mr-2"
                                             v-if="!isSubmitting && form.mode === 'multi_t2i'"></i>
                                         <i class="fas fa-photo-video mr-2"
@@ -603,9 +706,11 @@
                                             v-if="!isSubmitting && form.mode === 'extract'"></i>
                                         <i class="fas fa-store-alt mr-2"
                                             v-if="!isSubmitting && form.mode === 'ecommerce'"></i>
+                                        <i class="fas fa-ruler-combined mr-2"
+                                            v-if="!isSubmitting && form.mode === 'size_annot'"></i>
                                         <i class="fas fa-film mr-2" v-if="!isSubmitting && form.mode === 'video'"></i>
                                         <i class="fas fa-spinner fa-spin mr-2 text-lg" v-if="isSubmitting"></i>
-                                        {{ isSubmitting ? (form.mode === 'ecommerce' ? 'AI 分析中...' : '处理中...') : (form.mode === 'convert' ? '提交 AI 重绘' : form.mode === 'extract' ? '提交图案提取' : ['video','multi_video'].includes(form.mode) ? '提交视频生成' : form.mode === 'ecommerce' ? '开始电商生图' : form.mode === 'multi_t2i' ? `提交 ${multiLineCount} 张生成` : '提交生成') }}
+                                        {{ isSubmitting ? (form.mode === 'ecommerce' ? 'AI 分析中...' : form.mode === 'size_annot' ? 'AI 生成中...' : '处理中...') : (form.mode === 'convert' ? '提交 AI 重绘' : form.mode === 'extract' ? '提交图案提取' : ['video','multi_video'].includes(form.mode) ? '提交视频生成' : form.mode === 'ecommerce' ? '开始电商生图' : form.mode === 'size_annot' ? '生成尺寸标注图' : form.mode === 'multi_t2i' ? `提交 ${multiLineCount} 张生成` : '提交生成') }}
                                     </button>
                                 </div>
                             </div>
@@ -1050,6 +1155,18 @@
                         <span v-if="tdFlowState === 'td_step1_loading'">AI 正在理解图片图案...</span>
                         <span v-else>正在提交生成任务...</span>
                     </p>
+                    <p class="text-xs text-gray-400 mt-1">请稍候，勿关闭页面</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== 产品尺寸标注：加载遮罩 ===== -->
+        <div v-if="saFlowState === 'loading'"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/70 backdrop-blur-sm">
+            <div class="bg-white rounded-2xl shadow-2xl p-8 flex flex-col items-center gap-4 min-w-[260px]">
+                <div class="w-12 h-12 border-4 border-orange-200 border-t-orange-600 rounded-full animate-spin"></div>
+                <div class="text-center">
+                    <p class="font-semibold text-gray-800">AI 正在生成尺寸标注图...</p>
                     <p class="text-xs text-gray-400 mt-1">请稍候，勿关闭页面</p>
                 </div>
             </div>

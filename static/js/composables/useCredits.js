@@ -21,10 +21,16 @@ export function useCredits() {
         } catch (e) { }
     };
 
-    const estimateCredits = (form, calculateTotalTasks, ecSettings, multiLineCount) => {
+    const estimateCredits = (form, calculateTotalTasks, ecSettings, multiLineCount, saParams) => {
         const modelId = form.model_id;
-        if (!isAliyunModel(modelId)) return 0;
         const mode = form.mode;
+        if (mode === 'size_annot') {
+            const editModel = (saParams && saParams.edit_model) || 'qwen-image-edit-plus';
+            const vlCost = (VL_EST_INPUT / 1e6 * VL_PRICE.input + VL_EST_OUTPUT / 1e6 * VL_PRICE.output) * CREDITS_PER_YUAN;
+            const editCost = (IMAGE_PRICE[editModel] ?? 0.2) * CREDITS_PER_YUAN;
+            return Math.round((vlCost + editCost) * 10000) / 10000;
+        }
+        if (!isAliyunModel(modelId)) return 0;
 
         if (mode === 'video') {
             const duration = form.videoParams.duration || 5;

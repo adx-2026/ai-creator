@@ -7,6 +7,7 @@ export const MODE_LABELS = {
     convert: 'AI尺寸重绘', video: '视频生成', multi_t2i: '多图生成',
     multi_video: '多视频生成', extract: '图案提取生图',
     ecommerce: '电商场景生图', threed: '3D图片转换',
+    size_annot: '产品尺寸标注',
 };
 
 export const RATIO_OPTIONS = [

@@ -1,18 +1,20 @@
 """
-Pipeline routes: e-commerce product understanding/scene generation, 3D conversion.
+Pipeline routes: e-commerce product understanding/scene generation, 3D conversion,
+and product size annotation.
 """
 
 import os
 import uuid
 from typing import List, Optional
 
-from fastapi import APIRouter, UploadFile, File, Request, Depends
+from fastapi import APIRouter, Form, UploadFile, File, Request, Depends
 from fastapi.responses import JSONResponse
 
 from app.auth import get_current_user
-from app.credits import get_vl_credit_per_call, get_text_credit_per_call, deduct_credits
+from app.credits import get_vl_credit_per_call, get_text_credit_per_call, get_image_credit_per_image, deduct_credits
 from app.pipelines.ecommerce import understand_product, generate_scenes
 from app.pipelines.threed import understand_threed_pattern
+from app.pipelines.size_annotation import generate_size_annotation
 
 router = APIRouter()
 
@@ -152,3 +154,58 @@ async def threed_understand(
             })
 
     return {"items": items}
+
+
+@router.post("/api/size-annotation/generate")
+async def size_annotation_generate(
+    image: UploadFile = File(...),
+    shape: str = Form("square"),
+    length: Optional[str] = Form(None),
+    width: Optional[str] = Form(None),
+    height: Optional[str] = Form(None),
+    diameter: Optional[str] = Form(None),
+    output_size: str = Form("800*800"),
+    model_id: str = Form("qwen-image-edit-plus"),
+    curr: dict = Depends(get_current_user),
+):
+    """Generate a product size annotation image using Qwen VL + image-edit."""
+    user = curr["username"]
+    user_dir = f"users/{user}/outputs"
+    os.makedirs(user_dir, exist_ok=True)
+
+    if not image or not getattr(image, "filename", None):
+        return JSONResponse(status_code=400, content={"error": "请上传产品图片"})
+
+    fname = f"{uuid.uuid4().hex[:8]}_{image.filename}"
+    path = os.path.join(user_dir, fname)
+    img_data = await image.read()
+    with open(path, "wb") as f:
+        f.write(img_data)
+
+    dimensions = {}
+    if length and length.strip():
+        dimensions["length"] = length.strip()
+    if width and width.strip():
+        dimensions["width"] = width.strip()
+    if height and height.strip():
+        dimensions["height"] = height.strip()
+    if diameter and diameter.strip():
+        dimensions["diameter"] = diameter.strip()
+
+    vl_model = os.getenv("QWEN_VL_MODEL", "qwen3-vl-plus")
+    vl_cost = get_vl_credit_per_call(vl_model)
+    edit_cost = get_image_credit_per_image(model_id)
+    total_cost = round(vl_cost + edit_cost, 4)
+
+    try:
+        result_path, display_url = await generate_size_annotation(
+            path, shape, dimensions, model_id, output_size, user_dir, user
+        )
+        await deduct_credits(user, total_cost)
+        return {
+            "image_path": result_path,
+            "display_url": display_url,
+            "credit_cost": total_cost,
+        }
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
