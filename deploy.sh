@@ -28,7 +28,7 @@ fi
 
 # 3. 从 GitHub 拉取最新代码
 echo "📦 正在从 GitHub ($BRANCH 分支) 拉取最新代码..."
-git pull origin $BRANCH
+git pull --no-edit origin $BRANCH
 
 # 4. 更新 Python 虚拟环境依赖
 echo "🐍 正在检查并更新 Python 依赖..."
